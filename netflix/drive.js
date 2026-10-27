@@ -74,4 +74,14 @@ const Drive = {
       { method: "POST", headers: { "Content-Type": "multipart/related; boundary=" + b }, body });
     return r.json();
   },
+  // Uploads a photo or screenshot (a File or Blob) as a new file.
+  async upload(parent, name, blob) {
+    const b = "plc" + Math.random().toString(36).slice(2);
+    const body = new Blob([`--${b}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n` +
+      JSON.stringify({ name, parents: [parent] }) + `\r\n--${b}\r\nContent-Type: ${blob.type || "image/png"}\r\n\r\n`,
+      blob, `\r\n--${b}--`]);
+    const r = await this.req(UPLOAD + "?uploadType=multipart&fields=id",
+      { method: "POST", headers: { "Content-Type": "multipart/related; boundary=" + b }, body });
+    return r.json();
+  },
 };

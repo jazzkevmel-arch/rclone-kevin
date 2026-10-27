@@ -51,6 +51,12 @@ function merge(r) {
     S.videos[k] = win;
   }
   if ((r.uu || 0) > (S.uu || 0)) { S.ultimo = r.ultimo; S.uu = r.uu; }
+  // Plan of the day: the newest day wins; on the same day both devices' items are kept.
+  if (r.plan && (!S.plan || r.plan.fecha > S.plan.fecha)) S.plan = r.plan;
+  else if (r.plan && r.plan.fecha === S.plan.fecha) {
+    S.plan.items = [...new Set([...r.plan.items, ...S.plan.items])];
+    S.plan.u = Math.max(r.plan.u || 0, S.plan.u || 0);
+  }
   for (const [dev, days] of Object.entries(r.md || {})) {
     if (dev !== DEV) { S.md[dev] = days; continue; }
     const mine = (S.md[DEV] ||= {});
@@ -161,114 +167,245 @@ async function writeExports() {
   exportDue = false; lastExport = Date.now();
 }
 
+// ---------- what to deliver for each activity ----------
+const FOTO = {
+  "Automatización y PLC": "1 captura de tu programa funcionando en la VM (simulación o PLCSIM).",
+  "Diseño eléctrico (EPLAN)": "1 captura de EPLAN donde se vea lo que hiciste en tu proyecto 'Tablero CCM de práctica'.",
+  "Celulares": "1 foto del equipo, la pieza o la medición (multímetro, placa).",
+  "Electrónica": "1 foto del circuito o de la medición.",
+  "Computadoras, laptops y TV": "1 foto del equipo o de la prueba que hiciste.",
+  "Diseño CAD": "1 captura del dibujo o la pieza terminada.",
+  "Programación y datos": "1 captura del código y de su resultado.",
+};
+const lower1 = s => s.charAt(0).toLowerCase() + s.slice(1);
+function entrega(c, v) {
+  if (v.k === "V") return { txt: "Nada. Solo mira el video: se marca solo al llegar al 90 %.", foto: false, nota: false };
+  if (v.k === "T" || c.cat === "Idiomas")
+    return { txt: "Tu respuesta escrita en «Mis notas» (2 a 5 líneas). Al escribirla, la actividad queda hecha.", foto: false, nota: true };
+  const foto = FOTO[c.cat] || "1 captura o foto del resultado.";
+  if (v.k === "R")
+    return { txt: "Haz el reto antes de ver la solución. Sube " + lower1(foto) +
+      " En «Mis notas»: qué te salió solo y qué tuviste que ver en el video.", foto: true, nota: true };
+  return { txt: "Sube " + lower1(foto) + " Con eso la actividad queda hecha.", foto: true, nota: false };
+}
+// The activity is done by itself when its deliverable is there.
+function autoDone(c, v) {
+  const st = V(v), e = entrega(c, v);
+  if (v.k === "V" || st.act) return false;
+  const notaOk = (st.nota || "").trim().length >= 30, fotoOk = (st.ev || []).length > 0;
+  if ((!e.foto || fotoOk) && (!e.nota || notaOk)) { st.act = true; touch(v); exportDue = true; return true; }
+  return false;
+}
+
 // ---------- screens ----------
+let view = "hoy", expFilt = "ruta", expCourse = null, IDX = new Map();
+const mm = s => Math.floor(s / 60) + ":" + String(Math.floor(s % 60)).padStart(2, "0");
 function setVisto(v) {
   const st = V(v);
   if (!st.visto) { st.visto = true; st.vf = today(); touch(v); exportDue = true; }
 }
-function renderStats() {
-  const { dias } = totals(), list = ruta(), vistos = list.filter(x => V(x.v).visto).length;
-  const acts = list.filter(x => x.v.k !== "V"), hechas = acts.filter(x => V(x.v).act).length;
-  const min = Object.values(dias).reduce((a, b) => a + b, 0);
+function streakOf(dias) {
   let st = 0; const d = new Date();
   if (!(dias[today()] > 0)) d.setDate(d.getDate() - 1);
   while ((dias[d.toLocaleDateString("en-CA")] || 0) > 0) { st++; d.setDate(d.getDate() - 1); }
-  $("stats").innerHTML = [
-    [`${vistos}/${list.length}`, "mi ruta"], [`${hechas}/${acts.length}`, "actividades"],
-    [`${Math.round(dias[today()] || 0)} min`, "hoy"], [`${st} ${st === 1 ? "día" : "días"}`, "racha"],
-    [`${(min / 60).toFixed(1)} h`, "estudiadas"],
-  ].map(([b, s]) => `<div class="stat"><b>${b}</b><small>${s}</small></div>`).join("");
+  return st;
 }
-function renderHero() {
-  const list = all();
-  let h = S.ultimo && list.find(x => K(x.v) === S.ultimo);
-  if (!h || V(h.v).visto) h = nextsByCat()[0];
-  const nx = nextsByCat().filter(x => !h || K(x.v) !== K(h.v));
-  const pend = list.filter(x => V(x.v).visto && !V(x.v).act && x.v.k !== "V")
-    .sort((a, b) => (V(b.v).vf || "").localeCompare(V(a.v).vf || "")).slice(0, 6);
-  const st = h ? V(h.v) : null;
-  const mm = s => Math.floor(s / 60) + ":" + String(Math.floor(s % 60)).padStart(2, "0");
-  $("hero").innerHTML = (h ? `<div>
-      <div class="kicker">${st.pos > 5 ? "Continuar viendo en " + mm(st.pos) : "Siguiente"} · ${esc(h.c.cat)}</div>
-      <h2>${h.v.n}. ${esc(h.v.t)}</h2>
-      <div class="course">${esc(h.c.title)}${h.v.s ? " · " + esc(h.v.s) : ""}</div>
-      ${st.dur ? `<div class="bar" style="margin-top:10px;max-width:320px"><i style="width:${Math.min(100, st.pos / st.dur * 100)}%"></i></div>` : ""}
-      <button class="play" data-open="${h.ci},${h.vi}">▶ ${h.c.web ? "Abrir lección" : "Reproducir"}</button>
-      ${nx.length ? `<div class="todo" style="margin-top:18px"><h3>También en tu ruta</h3><ul>${nx.map(x =>
-        `<li data-open="${x.ci},${x.vi}">${esc(x.c.title)}: ${x.v.n}. ${esc(x.v.t)}</li>`).join("")}</ul></div>` : ""}</div>`
-      : `<div><h2>Terminaste tu ruta</h2></div>`) +
-    `<div class="todo"><h3>Actividades pendientes de lo que ya viste</h3>${pend.length ? "<ul>" + pend.map(x =>
-      `<li data-open="${x.ci},${x.vi}"><span class="badge k-${x.v.k}">${TIPOS[x.v.k]}</span> ${esc(x.v.a)} <span class="small">(${esc(x.c.title)}, ${x.v.n})</span></li>`).join("") + "</ul>"
-      : `<p class="small">Ninguna. Cada video que termines deja aquí su actividad hasta que la marques como hecha.</p>`}</div>`;
+// Today's plan: the next video of each "Mi ruta" category, fixed for the whole day.
+function planHoy() {
+  if (!S.plan || S.plan.fecha !== today()) {
+    S.plan = { fecha: today(), items: nextsByCat().map(x => K(x.v)), u: Date.now() };
+    save(1500);
+  }
+  return S.plan;
 }
-function renderFilters(el) {
-  const f = [["ruta", "Mi ruta"], ...CATS.filter(c => C.some(x => x.cat === c)).map(c => [c, c]), ["todo", "Todo"]];
-  $(el).innerHTML = f.map(([n, t]) => `<button class="chip ${filt === n ? "on" : ""}" data-filt="${esc(n)}">${esc(t)}</button>`).join("") +
-    `<button class="chip ${soloPend ? "on" : ""}" data-pend="1">Solo pendientes</button>` +
-    `<input class="search" data-search="${el}" placeholder="Buscar video o curso..." value="${esc(q)}">` +
-    (el === "afilters" ? `<button class="chip" onclick="print()">Imprimir listado</button>` : "");
+function nextInCat(cat) {
+  const inPlan = new Set(S.plan.items);
+  return all().find(x => x.c.ruta && x.c.cat === cat && !V(x.v).visto && !inPlan.has(K(x.v)));
 }
-const show = c => filt === "todo" || (filt === "ruta" ? c.ruta : c.cat === filt);
+function renderMenu() {
+  const opts = [["ruta", "Mi ruta", C.filter(c => c.ruta).length],
+    ...CATS.map(c => [c, c, C.filter(x => x.cat === c).length]).filter(o => o[2]), ["todo", "Todo", C.length]];
+  $("expmenu").innerHTML = opts.map(([k, t, n]) =>
+    `<button data-exp="${esc(k)}" class="${view === "exp" && expFilt === k ? "on" : ""}">${esc(t)} <small>${n} ${n === 1 ? "curso" : "cursos"}</small></button>`).join("");
+}
+const show = (c, f) => f === "todo" || (f === "ruta" ? c.ruta : c.cat === f);
 function match(c, v) {
   if (!q) return true;
   const s = q.toLowerCase();
   return c.title.toLowerCase().includes(s) || v.t.toLowerCase().includes(s) || (v.s || "").toLowerCase().includes(s);
 }
-function card(c, ci, v, vi) {
-  const st = V(v), pct = st.dur ? Math.min(100, st.pos / st.dur * 100) : 0;
-  return `<div class="card ${st.visto ? "done" : ""}" data-open="${ci},${vi}" title="${esc(v.a)}">
-    <div class="marks">${st.visto ? '<span class="ok">✔ visto</span>' : ""}${st.act ? ' <span class="ok">· act.</span>' : ""}</div>
-    <div class="num">${v.n}</div>${v.s ? `<div class="sec">${esc(v.s)}</div>` : ""}<div class="t">${esc(v.t)}</div>
-    <div><span class="badge k-${v.k}">${TIPOS[v.k]}</span></div>
-    <div class="bar"><i style="width:${st.visto ? 100 : pct}%"></i></div></div>`;
+// ---------- streaming look ----------
+// Colors stay between teal and violet (no reds).
+const hue = c => { let h = 0; for (const ch of c.id + c.cat) h = (h * 31 + ch.charCodeAt(0)) % 997; return 160 + h % 130; };
+const short = t => t.replace(/\s*\(.*?\)\s*/g, " ").trim();
+function tile(x) {
+  const st = V(x.v), pct = st.visto ? 100 : st.dur ? Math.min(100, st.pos / st.dur * 100) : 0;
+  return `<div class="tile" data-open="${x.ci},${x.vi}" title="${esc(x.v.a)}">
+    <div class="art" style="--h:${hue(x.c)}"><span class="ct">${esc(short(x.c.title))}</span>
+      <span class="tt2">${esc(x.v.t)}</span><span class="ep">${x.v.n}</span>${st.visto ? '<span class="okm">✔ VISTO</span>' : ""}<span class="pl">▶</span></div>
+    ${pct > 1 ? `<div class="pb"><i style="width:${pct}%"></i></div>` : ""}
+    <div class="cap"><span class="badge k-${x.v.k}">${TIPOS[x.v.k]}</span>${x.v.s ? esc(x.v.s).slice(0, 40) : ""}${st.act ? " · ✔ entregada" : ""}</div></div>`;
 }
-function renderRows() {
-  renderFilters("filters");
-  let lastCat = "", html = "";
-  C.forEach((c, ci) => {
-    if (!show(c)) return;
-    const done = c.videos.filter(v => V(v).visto).length, pct = Math.round(done / c.videos.length * 100);
-    const vids = c.videos.map((v, vi) => (soloPend && V(v).visto) || !match(c, v) ? "" : card(c, ci, v, vi)).join("");
-    if (!vids) return;
-    if (c.cat !== lastCat) { html += `<h2 class="cat-h">${esc(c.cat)}</h2>`; lastCat = c.cat; }
-    html += `<div class="row"><div class="row-head"><h3>${esc(c.title)}</h3>
-      <span class="meta">${c.fase ? "Fase " + c.fase + " · " : ""}${done}/${c.videos.length} · ${pct}%</span>
-      <div class="bar"><i style="width:${pct}%"></i></div></div><div class="cards">${vids}</div></div>`;
-  });
-  $("rows").innerHTML = html || `<p class="small">Nada con ese filtro.</p>`;
+function row(title, items, extra = "", sub = "") {
+  if (!items.length) return "";
+  return `<section class="rowx"><h3>${esc(title)}${sub ? ` <small>${esc(sub)}</small>` : ""}${extra}</h3><div class="track">${items.map(tile).join("")}</div></section>`;
 }
+// Videos of a course for its row: start a little before the first pending one.
+function courseRow(c, ci, n = 24) {
+  const first = Math.max(0, c.videos.findIndex(v => !V(v).visto));
+  const from = Math.max(0, first - 2), done = c.videos.filter(v => V(v).visto).length;
+  const items = c.videos.slice(from, from + n).map((v, k) => ({ c, ci, v, vi: from + k }));
+  return row(c.title, items, ` <a data-course="${ci}">Ver todo ›</a>`, `${done}/${c.videos.length}`);
+}
+
+function renderHoy() {
+  const p = planHoy(), { dias } = totals();
+  const items = p.items.map(k => IDX.get(k)).filter(Boolean);
+  const hechos = items.filter(x => V(x.v).visto).length, list = ruta();
+  const pend = all().filter(x => V(x.v).visto && !V(x.v).act && x.v.k !== "V")
+    .sort((a, b) => (V(b.v).vf || "").localeCompare(V(a.v).vf || "")).slice(0, 10);
+  const seguir = all().filter(x => !V(x.v).visto && V(x.v).pos > 5).sort((a, b) => (V(b.v).u || 0) - (V(a.v).u || 0)).slice(0, 12);
+  const st = streakOf(dias), cats = [...new Set(list.map(x => x.c.cat))].filter(nextInCat);
+  // Billboard: the video in progress, else the first pending item of today's plan.
+  let h = S.ultimo && IDX.get(S.ultimo);
+  if (!h || V(h.v).visto) h = items.find(x => !V(x.v).visto) || null;
+  let bill = "";
+  if (h) {
+    const hs = V(h.v), e = entrega(h.c, h.v);
+    const play = h.c.web ? "↗ Abrir lección" : hs.pos > 5 ? "▶ Seguir en " + mm(hs.pos) : "▶ Reproducir";
+    bill = `<section class="bill"><div class="bg" style="--h:${hue(h.c)}" data-n="${h.v.n}"></div><div class="fade"></div><div class="in">
+      <div class="kicker">${hs.pos > 5 ? "Continuar viendo" : "Siguiente en tu plan"} · ${esc(h.c.cat)}</div>
+      <h1>${esc(h.v.t)}</h1>
+      <div class="meta">${esc(h.c.title)} · Episodio ${h.v.n}${h.v.s ? " · " + esc(h.v.s) : ""}</div>
+      ${hs.dur ? `<div class="bar"><i style="width:${Math.min(100, hs.pos / hs.dur * 100)}%"></i></div>` : ""}
+      ${h.v.k !== "V" ? `<p class="desc"><span class="badge k-${h.v.k}">${TIPOS[h.v.k]}</span> ${esc(h.v.a)}<br><span class="small">Entregas: ${esc(e.txt)}</span></p>` : ""}
+      <button class="bbtn w" data-open="${h.ci},${h.vi}">${play}</button><button class="bbtn g" data-course="${h.ci}">ⓘ Ver curso</button>
+      <div class="chips2">${[[`${hechos}/${items.length}`, "plan de hoy"], [`${Math.round(dias[today()] || 0)} min`, "hoy"],
+        [`${st} ${st === 1 ? "día" : "días"}`, "racha"], [`${list.filter(x => V(x.v).visto).length}/${list.length}`, "mi ruta"]]
+        .map(([b, s]) => `<div><b>${b}</b><small>${s}</small></div>`).join("")}</div></div></section>`;
+  } else {
+    bill = `<section class="bill"><div class="bg" style="--h:160" data-n="✔"></div><div class="fade"></div><div class="in">
+      <div class="kicker">${hechos ? "Plan de hoy completo" : "Mi ruta"}</div><h1>${hechos ? "✔ Listo por hoy" : "Terminaste tu ruta"}</h1>
+      <p class="desc">Si quieres seguir, agrega uno más a tu plan:</p>
+      ${cats.map(c => `<button class="bbtn g" data-mas="${esc(c)}">+ ${esc(c)}</button>`).join("")}</div></section>`;
+  }
+  $("view-hoy").innerHTML = bill +
+    row("Tu plan de hoy", items, "", `${hechos} de ${items.length} vistos`) +
+    row("Continuar viendo", seguir.filter(x => !items.includes(x))) +
+    row("Actividades por entregar", pend, "", "toca uno y sube tu captura o escribe tu respuesta") +
+    `<p class="small" style="margin:10px 4%">Para ver otros cursos usa <b>Explorar ▾</b> arriba.</p>`;
+}
+
+function renderExp() {
+  const name = expFilt === "ruta" ? "Mi ruta" : expFilt === "todo" ? "Todos los cursos" : expFilt;
+  let html = "";
+  if (expCourse !== null) {
+    const c = C[expCourse], done = c.videos.filter(v => V(v).visto).length;
+    const nx = c.videos.findIndex(v => !V(v).visto);
+    html = `<div class="series"><div class="bg" style="--h:${hue(c)}"></div>
+      <button class="back" data-back>◀ ${esc(name)}</button>
+      <div class="kicker">${esc(c.cat)}</div><h2>${esc(c.title)}</h2>
+      <div class="small">${done} de ${c.videos.length} vistos · ${esc(c.tool)}</div>
+      <div class="bar" style="margin:10px 0 0;max-width:420px"><i style="width:${done / c.videos.length * 100}%"></i></div>
+      ${nx >= 0 ? `<button class="bbtn w" data-open="${expCourse},${nx}">▶ ${V(c.videos[nx]).pos > 5 ? "Seguir" : done ? "Continuar" : "Empezar"}: episodio ${c.videos[nx].n}</button>` : ""}
+      <button class="bbtn g" data-pend="1">${soloPend ? "Ver todos" : "Solo pendientes"}</button></div>
+      <div class="vlist eps">`;
+    let sec = null;
+    c.videos.forEach((v, vi) => {
+      if (soloPend && V(v).visto) return;
+      if ((v.s || "") !== sec) { sec = v.s || ""; if (sec) html += `<div class="vsec">${esc(sec)}</div>`; }
+      const st = V(v), pct = st.visto ? 100 : st.dur ? st.pos / st.dur * 100 : 0;
+      html += `<div class="vrowi ${st.visto ? "ok" : ""}" data-open="${expCourse},${vi}"><span class="n">${st.visto ? "✔" : v.n}</span>
+        <div><div class="art" style="--h:${hue(c)}"><span class="ep">${v.n}</span><span class="pl">▶</span></div>${pct > 1 ? `<div class="pb" style="height:3px;background:#333"><i style="display:block;height:100%;width:${pct}%;background:var(--accent)"></i></div>` : ""}</div>
+        <div><div style="font-weight:600">${esc(v.t)}</div><div class="small">${TIPOS[v.k]}${st.act ? " · ✔ entregada" : ""}${!st.visto && st.pos > 5 ? " · vas en " + mm(st.pos) : ""}</div>
+        ${v.k !== "V" ? `<div class="small" style="margin-top:4px;color:#c6cad2">${esc(v.a)}</div>` : ""}</div></div>`;
+    });
+    html += "</div>";
+    $("view-exp").innerHTML = html;
+    return;
+  }
+  html = `<div class="exph"><h2 style="margin:0">${esc(name)}</h2>
+    <input class="search" data-search="exp" placeholder="Buscar video o curso..." value="${esc(q)}"></div>`;
+  if (q) {
+    const hits = all().filter(x => show(x.c, expFilt) && match(x.c, x.v)).slice(0, 60);
+    html += hits.length ? row(`Resultados para «${q}»`, hits) : '<p class="small" style="margin:0 4%">Nada con esa búsqueda.</p>';
+  } else {
+    let lastCat = "";
+    C.forEach((c, ci) => {
+      if (!show(c, expFilt)) return;
+      if (expFilt === "todo" && c.cat !== lastCat) { lastCat = c.cat; html += `<div class="sec-h" style="margin:26px 4% 0">${esc(c.cat)}</div>`; }
+      html += courseRow(c, ci, expFilt === "todo" ? 14 : 24);
+    });
+  }
+  $("view-exp").innerHTML = html;
+}
+
 function renderActs() {
-  renderFilters("afilters");
+  const f = [["ruta", "Mi ruta"], ...CATS.filter(c => C.some(x => x.cat === c)).map(c => [c, c]), ["todo", "Todo"]];
+  $("afilters").innerHTML = f.map(([n, t]) => `<button class="chip ${filt === n ? "on" : ""}" data-filt="${esc(n)}">${esc(t)}</button>`).join("") +
+    `<button class="chip ${soloPend ? "on" : ""}" data-pend="1">Solo pendientes</button>` +
+    `<input class="search" data-search="act" placeholder="Buscar..." value="${esc(q)}">` +
+    `<button class="chip" onclick="print()">Imprimir</button>`;
   let html = "";
   C.forEach((c, ci) => {
-    if (!show(c)) return;
+    if (!show(c, filt)) return;
     const rows = c.videos.map((v, vi) => {
       const st = V(v);
-      if ((soloPend && st.act) || !match(c, v)) return "";
+      if (v.k === "V" || (soloPend && st.act) || !match(c, v)) return "";
       return `<tr class="${st.act ? "hecho" : ""}"><td class="c"><input type="checkbox" data-act="${ci},${vi}" ${st.act ? "checked" : ""}></td>
-        <td>${v.n}</td><td><span class="badge k-${v.k}">${TIPOS[v.k]}</span></td><td>${esc(v.a)}</td>
+        <td>${v.n}</td><td><span class="badge k-${v.k}">${TIPOS[v.k]}</span></td><td>${esc(v.a)}<div class="small">Entregas: ${esc(entrega(c, v).txt)}</div></td>
         <td class="small" data-open="${ci},${vi}" style="cursor:pointer">${v.s ? esc(v.s) + " · " : ""}${esc(v.t)}${st.visto ? " ✔" : ""}</td></tr>`;
     }).join("");
-    if (rows) html += `<h3>${esc(c.title)} <span class="small">${esc(c.cat)} · ${esc(c.tool)}</span></h3>
-      <table><thead><tr><th></th><th>#</th><th>Tipo</th><th>Actividad</th><th>Video</th></tr></thead><tbody>${rows}</tbody></table>`;
+    if (rows) html += `<h3>${esc(c.title)} <span class="small">${esc(c.cat)}</span></h3>
+      <table><thead><tr><th></th><th>#</th><th>Tipo</th><th>Actividad y entrega</th><th>Video</th></tr></thead><tbody>${rows}</tbody></table>`;
   });
-  $("alist").innerHTML = html || `<p class="small">Nada con ese filtro.</p>`;
+  $("alist").innerHTML = html || '<p class="small">Nada con ese filtro.</p>';
 }
 function render() {
   if (!C.length) return;
-  renderStats(); renderHero(); renderRows();
-  if (!$("view-act").hidden) renderActs();
+  for (const t of ["hoy", "exp", "act"]) { $("view-" + t).hidden = view !== t; $("tab-" + t).classList.toggle("on", view === t); }
+  renderMenu();
+  if (view === "hoy") renderHoy(); else if (view === "exp") renderExp(); else renderActs();
 }
+function go(v) { view = v; q = ""; soloPend = false; $("expmenu").hidden = true; render(); scrollTo(0, 0); }
 
 // ---------- player ----------
+function renderSide(c, v) {
+  const st = V(v), e = entrega(c, v);
+  $("pentrega").innerHTML = `<b>Qué entregas</b>${esc(e.txt)}`;
+  $("pevbox").style.display = e.foto ? "" : "none";
+  $("pevs").innerHTML = (st.ev || []).map((f, i) =>
+    `<a href="https://drive.google.com/file/d/${encodeURIComponent(f.id)}/view" target="_blank" rel="noopener">📷 Captura ${i + 1}</a>`).join("");
+  $("pdone").checked = st.act;
+}
+async function addEvidence(files) {
+  if (!cur) return;
+  const c = C[cur.ci], v = curV(), st = V(v);
+  $("pevmsg").textContent = "Subiendo...";
+  try {
+    if (!ids.ev) ids.ev = await Drive.folder(ids.folder, "evidencias");
+    for (const f of files) {
+      const ext = (f.type.split("/")[1] || "png").replace("jpeg", "jpg");
+      const name = `${c.title} - ${v.n}. ${v.t}`.replace(/[\\/:*?"<>|]/g, "-").slice(0, 120) + " - " + localIso().replace(/:/g, "-") + "." + ext;
+      const r = await Drive.upload(ids.ev, name, f);
+      (st.ev ||= []).push({ id: r.id, name });
+    }
+    touch(v); autoDone(c, v); saveNow(); renderSide(c, v);
+    $("pevmsg").textContent = "✔ Subida a tu Drive (Netflix_PLC/evidencias).";
+  } catch (err) {
+    $("pevmsg").textContent = "No se pudo subir: " + err.message;
+  }
+}
 async function openVid(ci, vi) {
   const c = C[ci], v = c.videos[vi], vid = $("video"), web = !!c.web;
   cur = { ci, vi };
+  $("expmenu").hidden = true;
   $("ptitle").textContent = `${c.title} · ${v.n}. ${v.t}`;
   $("pbadge").className = "badge k-" + v.k; $("pbadge").textContent = TIPOS[v.k];
   $("pact").textContent = v.a; $("ptool").textContent = "Herramienta: " + c.tool;
   $("vmsg").style.display = "none"; $("mprev").dataset.armed = "";
   $("mprev").textContent = "Marcar anteriores como vistos";
+  $("pevmsg").textContent = "En la PC también puedes pegar una captura aquí con Ctrl+V (Win+Shift+S para recortar la pantalla).";
   $("vbox").style.display = web ? "none" : "";
   $("webbox").style.display = web ? "flex" : "none";
   $("player").classList.add("open");
@@ -280,9 +417,10 @@ async function openVid(ci, vi) {
   if (!cur || cur.ci !== ci || cur.vi !== vi) return;
   const st = V(v);
   S.ultimo = K(v); S.uu = Date.now(); save(1500);
-  $("pdone").checked = st.act; $("pnote").value = st.nota || "";
+  $("pnote").value = st.nota || "";
+  renderSide(c, v);
   $("mvisto").textContent = st.visto ? "✔ Visto" : "Marcar como visto";
-  if (web) { $("websec").textContent = v.s || c.title; $("weblink").href = v.url; return; }
+  if (web) { $("websec").textContent = (v.s ? v.s + " · " : "") + v.t; $("weblink").href = v.url; return; }
   vid.src = "v/" + v.d;
   vid.onloadedmetadata = () => {
     $("vwait").style.display = "none";
@@ -324,7 +462,16 @@ $("pclose").onclick = closeVid;
 $("prev").onclick = () => step(-1);
 $("next").onclick = () => step(1);
 $("pdone").onchange = e => { const v = curV(); V(v).act = e.target.checked; touch(v); saveNow(); };
-$("pnote").oninput = e => { const v = curV(); V(v).nota = e.target.value; touch(v); save(3000); };
+$("pnote").oninput = e => {
+  const c = C[cur.ci], v = curV(); V(v).nota = e.target.value; touch(v);
+  if (autoDone(c, v)) { $("pdone").checked = true; saveNow(); } else save(3000);
+};
+$("pfile").onchange = e => { if (e.target.files.length) addEvidence([...e.target.files]); e.target.value = ""; };
+document.addEventListener("paste", e => {
+  if (!cur || $("pevbox").style.display === "none") return;
+  const imgs = [...((e.clipboardData && e.clipboardData.items) || [])].filter(i => i.type.startsWith("image/")).map(i => i.getAsFile());
+  if (imgs.length) { e.preventDefault(); addEvidence(imgs); }
+});
 $("mvisto").onclick = () => { setVisto(curV()); saveNow(); $("mvisto").textContent = "✔ Visto"; };
 $("mprev").onclick = e => {
   const b = e.target;
@@ -335,11 +482,20 @@ $("mprev").onclick = e => {
 };
 document.addEventListener("keydown", e => { if (e.key === "Escape" && cur && !document.fullscreenElement) closeVid(); });
 document.addEventListener("click", e => {
-  const o = e.target.closest("[data-open]");
+  const t = e.target;
+  if (!t.closest(".dd")) $("expmenu").hidden = true;
+  const o = t.closest("[data-open]");
   if (o) { const [ci, vi] = o.dataset.open.split(",").map(Number); return openVid(ci, vi); }
-  const f = e.target.closest("[data-filt]");
+  const ex = t.closest("[data-exp]");
+  if (ex) { expFilt = ex.dataset.exp; expCourse = null; return go("exp"); }
+  const co = t.closest("[data-course]");
+  if (co) { expCourse = +co.dataset.course; soloPend = false; render(); return scrollTo(0, 0); }
+  if (t.closest("[data-back]")) { expCourse = null; return render(); }
+  const mas = t.closest("[data-mas]");
+  if (mas) { const x = nextInCat(mas.dataset.mas); if (x) { S.plan.items.push(K(x.v)); S.plan.u = Date.now(); saveNow(); render(); } return; }
+  const f = t.closest("[data-filt]");
   if (f) { filt = f.dataset.filt; return render(); }
-  if (e.target.closest("[data-pend]")) { soloPend = !soloPend; return render(); }
+  if (t.closest("[data-pend]")) { soloPend = !soloPend; return render(); }
 });
 let searchT = null;
 document.addEventListener("input", e => {
@@ -358,12 +514,9 @@ document.addEventListener("change", e => {
   const [ci, vi] = a.split(",").map(Number), v = C[ci].videos[vi];
   V(v).act = e.target.checked; touch(v); saveNow(); render();
 });
-function tab(t) {
-  $("view-ver").hidden = t !== "ver"; $("view-act").hidden = t !== "act";
-  $("tab-ver").classList.toggle("on", t === "ver"); $("tab-act").classList.toggle("on", t === "act"); render();
-}
-$("tab-ver").onclick = () => tab("ver");
-$("tab-act").onclick = () => tab("act");
+$("tab-hoy").onclick = () => go("hoy");
+$("tab-act").onclick = () => { filt = "ruta"; go("act"); };
+$("tab-exp").onclick = () => { renderMenu(); $("expmenu").hidden = !$("expmenu").hidden; };
 
 // Save when the app goes to the background; refresh when it comes back.
 document.addEventListener("visibilitychange", () => {
@@ -417,6 +570,7 @@ async function loadCatalog() {
   }
   const cat = JSON.parse(text);
   C = cat.cursos; TIPOS = cat.tipos; CATS = cat.cats;
+  IDX = new Map(all().map(x => [K(x.v), x]));
 }
 
 let started = false;
@@ -426,7 +580,7 @@ async function start() {
   if (started) { flush(); return; }
   started = true;
   $("login").hidden = true; $("app").hidden = false;
-  $("hero").innerHTML = `<div><h2>Cargando tus cursos desde Google Drive...</h2></div>`;
+  $("view-hoy").innerHTML = `<div class="wrap"><h2>Cargando tus cursos desde Google Drive...</h2></div>`;
   try {
     await startWorker();
     await sendTokenToWorker();
@@ -442,7 +596,7 @@ async function start() {
     syncMsg("✔ Al día");
   } catch (e) {
     started = false;
-    $("hero").innerHTML = `<div><h2>No se pudo cargar</h2><p>${esc(e.message)}</p><button class="play" onclick="location.reload()">Reintentar</button></div>`;
+    $("view-hoy").innerHTML = `<div class="wrap"><h2>No se pudo cargar</h2><p>${esc(e.message)}</p><button class="play" onclick="location.reload()">Reintentar</button></div>`;
   }
 }
 
