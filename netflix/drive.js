@@ -1,6 +1,6 @@
 // Google sign-in and Google Drive helpers for Netflix PLC.
 // Everything private (course list, progress) lives in the user's own Drive, never in this repository.
-const CLIENT_ID = "PEGAR_AQUI_EL_CLIENT_ID_WEB.apps.googleusercontent.com";
+const CLIENT_ID = "1078206882064-64g58hf4f8q26jgnu0k04far83it9ua3.apps.googleusercontent.com";
 // Full Drive access: needed to read the courses shared with the user and to update the progress
 // files that the PC (Google Drive for desktop) also edits.
 const SCOPE = "https://www.googleapis.com/auth/drive";
