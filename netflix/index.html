@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1116">
+<meta name="robots" content="noindex">
+<title>Netflix PLC</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icono.svg" type="image/svg+xml">
+<style>
+  :root {
+    --bg: #0f1116; --panel: #181b23; --panel2: #20242e; --line: #2c3240;
+    --txt: #eceef3; --muted: #9aa3b5; --accent: #2fd3a6; --gold: #f5c542;
+    --red: #f0806b; --blue: #6fa8f5;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--txt); font: 15px/1.45 "Segoe UI", Roboto, Arial, sans-serif; }
+  button { font: inherit; cursor: pointer; }
+  header { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 10px 24px; align-items: center;
+           padding: 12px 32px; background: rgba(15,17,22,.96); border-bottom: 1px solid var(--line); }
+  .logo { font-weight: 800; font-size: 22px; letter-spacing: .5px; color: var(--gold); }
+  .logo span { color: var(--accent); }
+  nav { display: flex; gap: 6px; }
+  nav button { background: none; border: 0; color: var(--muted); padding: 6px 12px; border-radius: 6px; }
+  nav button.on { color: var(--txt); background: var(--panel2); }
+  .stats { display: flex; gap: 18px; margin-left: auto; flex-wrap: wrap; }
+  .stat b { display: block; font-size: 18px; color: var(--accent); }
+  .stat small { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .6px; }
+  .sync { font-size: 12px; color: var(--muted); }
+  main { padding: 24px 32px 60px; }
+  .warn { background: #3a2020; border: 1px solid var(--red); color: #ffd7cf; padding: 10px 14px; border-radius: 8px; margin-bottom: 18px; display: none; }
+  .warn button { margin-left: 8px; }
+  .login { max-width: 460px; margin: 12vh auto; text-align: center; padding: 0 16px; }
+  .login h1 { font-size: 34px; color: var(--gold); margin-bottom: 6px; }
+  .login h1 span { color: var(--accent); }
+  .hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; background: linear-gradient(120deg, #1b2a2a, #181b23 60%);
+          border: 1px solid var(--line); border-radius: 14px; padding: 26px; margin-bottom: 30px; }
+  .hero h2 { margin: 4px 0 8px; font-size: 26px; }
+  .kicker { color: var(--gold); font-size: 12px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; }
+  .hero .course { color: var(--muted); }
+  .play { background: var(--accent); color: #062b22; border: 0; font-weight: 700; padding: 10px 22px; border-radius: 8px; margin-top: 14px; }
+  .todo h3 { margin: 0 0 8px; font-size: 14px; color: var(--gold); text-transform: uppercase; letter-spacing: .6px; }
+  .todo li { margin: 6px 0; cursor: pointer; }
+  .todo li:hover { color: var(--accent); }
+  .todo ul { padding-left: 18px; margin: 0; }
+  .filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; align-items: center; }
+  .chip { background: var(--panel); border: 1px solid var(--line); color: var(--muted); padding: 5px 12px; border-radius: 99px; }
+  .chip.on { border-color: var(--accent); color: var(--txt); }
+  .row { margin-bottom: 30px; }
+  .row-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
+  .row-head h3 { margin: 0; font-size: 18px; }
+  .row-head .meta { color: var(--muted); font-size: 13px; }
+  .bar { height: 4px; background: var(--line); border-radius: 4px; overflow: hidden; }
+  .bar i { display: block; height: 100%; background: var(--accent); }
+  .row-head .bar { width: 160px; }
+  .cards { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 8px; scroll-snap-type: x proximity; }
+  .card { flex: 0 0 210px; scroll-snap-align: start; background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+          padding: 12px; cursor: pointer; position: relative; display: flex; flex-direction: column; gap: 8px; min-height: 132px; }
+  .card:hover { border-color: var(--accent); }
+  .card .num { font-size: 26px; font-weight: 800; color: #3a4254; line-height: 1; }
+  .card .t { font-size: 13px; font-weight: 600; flex: 1; }
+  .card .sec { font-size: 11px; color: var(--muted); }
+  .card.done .num { color: var(--accent); }
+  .badge { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 4px; text-transform: uppercase; letter-spacing: .5px; }
+  .k-T { background: #2a3550; color: var(--blue); } .k-P { background: #1f3b33; color: var(--accent); }
+  .k-R { background: #4a2f1f; color: var(--gold); } .k-V { background: #2c3240; color: var(--muted); }
+  .marks { position: absolute; top: 10px; right: 10px; font-size: 12px; color: var(--muted); }
+  .marks .ok { color: var(--accent); }
+  .cat-h { margin: 34px 0 6px; font-size: 13px; color: var(--gold); text-transform: uppercase; letter-spacing: 1.2px; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+  .search { background: var(--panel); border: 1px solid var(--line); color: var(--txt); padding: 6px 12px; border-radius: 99px; min-width: 200px; font: inherit; }
+
+  /* player */
+  .player { position: fixed; inset: 0; background: rgba(5,6,9,.98); z-index: 20; display: none; overflow-y: auto; }
+  .player.open { display: block; }
+  .pwrap { max-width: 1280px; margin: 0 auto; padding: 18px 24px 40px; display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 22px; }
+  .ptop { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; }
+  .ptop h2 { margin: 0; font-size: 18px; flex: 1; }
+  .x { background: var(--panel2); color: var(--txt); border: 0; width: 36px; height: 36px; border-radius: 50%; font-size: 18px; flex: none; }
+  .ctrl { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; align-items: center; }
+  .btn { background: var(--panel2); color: var(--txt); border: 1px solid var(--line); padding: 7px 12px; border-radius: 7px; }
+  .btn.on { border-color: var(--accent); color: var(--accent); }
+  .btn.main { background: var(--accent); color: #062b22; border: 0; font-weight: 700; }
+  .side { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; align-self: start; }
+  .side h4 { margin: 0 0 6px; font-size: 12px; color: var(--gold); text-transform: uppercase; letter-spacing: .7px; }
+  .side .act { font-size: 16px; font-weight: 600; margin: 8px 0 6px; }
+  .side .tool { color: var(--muted); font-size: 13px; margin-bottom: 12px; }
+  .check { display: flex; gap: 8px; align-items: center; margin: 12px 0; font-weight: 600; }
+  .check input { width: 20px; height: 20px; accent-color: var(--accent); }
+  textarea { width: 100%; min-height: 110px; background: var(--bg); color: var(--txt); border: 1px solid var(--line); border-radius: 8px; padding: 8px; font: inherit; }
+  .small { color: var(--muted); font-size: 12px; }
+  .vmsg { color: var(--red); margin-top: 8px; display: none; }
+
+  /* video box with zoom: pinch, wheel or buttons to zoom, drag to move */
+  .vbox { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #000; border-radius: 10px; overflow: hidden;
+          touch-action: none; user-select: none; -webkit-user-select: none; }
+  .vbox video { position: absolute; left: 0; top: 0; width: 100%; height: 100%; object-fit: contain; transform-origin: 0 0; }
+  .vbox:fullscreen { border-radius: 0; aspect-ratio: auto; width: 100vw; height: 100vh; }
+  .vbox.zoomed { cursor: grab; }
+  .vbar { position: absolute; left: 0; right: 0; bottom: 0; padding: 26px 10px 8px; display: flex; flex-direction: column; gap: 6px;
+          background: linear-gradient(transparent, rgba(0,0,0,.85)); transition: opacity .25s; }
+  .vbox.hide .vbar, .vbox.hide .zlabel { opacity: 0; pointer-events: none; }
+  .vrow { display: flex; align-items: center; gap: 6px; }
+  .vb { background: rgba(255,255,255,.12); color: #fff; border: 0; min-width: 40px; height: 38px; border-radius: 8px; padding: 0 9px; font-size: 15px; }
+  .vb.on { background: var(--accent); color: #062b22; font-weight: 700; }
+  .vtime { color: #ddd; font-size: 12px; white-space: nowrap; }
+  .seek { flex: 1; accent-color: var(--accent); height: 24px; }
+  .zlabel { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,.6); color: #fff; font-size: 12px; padding: 3px 8px; border-radius: 6px; }
+  .vwait { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; color: #ccc; pointer-events: none; }
+  .mini { position: absolute; top: 10px; right: 10px; width: 96px; aspect-ratio: 16/9; border: 1px solid rgba(255,255,255,.6); background: rgba(0,0,0,.35); display: none; }
+  .mini i { position: absolute; border: 2px solid var(--accent); }
+  .vbox.zoomed .mini { display: block; }
+  .vbox.hide .mini { opacity: .5; }
+  .webbox { aspect-ratio: 16 / 9; background: linear-gradient(135deg, #1b2a2a, #20242e); border-radius: 10px; display: none;
+            flex-direction: column; align-items: center; justify-content: center; gap: 12px; text-align: center; padding: 24px; }
+  .webbox .big { font-size: 20px; font-weight: 700; }
+
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .6px; background: var(--bg); }
+  tr.hecho td { color: var(--muted); text-decoration: line-through; }
+  td.c input { width: 18px; height: 18px; accent-color: var(--accent); }
+  .lst h3 { margin: 26px 0 6px; }
+  @media (max-width: 900px) {
+    header, main { padding-left: 16px; padding-right: 16px; }
+    .hero { grid-template-columns: 1fr; padding: 18px; }
+    .hero h2 { font-size: 21px; }
+    .pwrap { grid-template-columns: 1fr; padding: 10px 0 30px; gap: 14px; }
+    .ptop, .pwrap > div > .ctrl, .side, .vmsg { margin-left: 16px; margin-right: 16px; }
+    .vbox { border-radius: 0; }
+    .stats { margin-left: 0; gap: 14px; }
+    .stat b { font-size: 16px; }
+    .search { min-width: 0; flex: 1 1 160px; }
+    .vb.wide { display: none; }
+  }
+  @media print {
+    header nav, .stats, .filters, .warn, .sync { display: none; }
+    body { background: #fff; color: #000; }
+    th { background: #fff; color: #000; }
+  }
+</style>
+</head>
+<body>
+<section class="login" id="login" hidden>
+  <h1>Netflix <span>PLC</span></h1>
+  <p>Tus cursos y tu avance están en tu Google Drive. Entra con tu cuenta de Google para verlos.</p>
+  <button class="play" id="blogin">Entrar con Google</button>
+  <p class="small" id="lmsg"></p>
+</section>
+
+<div id="app" hidden>
+<header>
+  <div class="logo">Netflix <span>PLC</span></div>
+  <nav>
+    <button id="tab-ver" class="on">Ver</button>
+    <button id="tab-act">Actividades</button>
+  </nav>
+  <div class="stats" id="stats"></div>
+  <div class="sync" id="sync"></div>
+</header>
+<main>
+  <div class="warn" id="warn"></div>
+  <section id="view-ver">
+    <div class="hero" id="hero"></div>
+    <div class="filters" id="filters"></div>
+    <div id="rows"></div>
+  </section>
+  <section id="view-act" hidden>
+    <div class="filters" id="afilters"></div>
+    <div class="lst" id="alist"></div>
+  </section>
+</main>
+</div>
+
+<div class="player" id="player">
+  <div class="pwrap">
+    <div class="ptop"><button class="x" id="pclose" title="Cerrar (Esc)">×</button><h2 id="ptitle"></h2></div>
+    <div>
+      <div class="vbox" id="vbox">
+        <video id="video" playsinline preload="metadata"></video>
+        <div class="vwait" id="vwait">Cargando desde Google Drive...</div>
+        <div class="zlabel" id="zlabel" hidden></div>
+        <div class="mini" id="mini"><i id="minibox"></i></div>
+        <div class="vbar" id="vbar">
+          <div class="vrow">
+            <span class="vtime" id="tnow">0:00</span>
+            <input type="range" class="seek" id="seek" min="0" max="1000" value="0" aria-label="Avance del video">
+            <span class="vtime" id="tdur">0:00</span>
+          </div>
+          <div class="vrow">
+            <button class="vb" id="bplay" title="Reproducir o pausar (espacio)">▶</button>
+            <button class="vb" id="bback" title="10 s atrás (←)">↺10</button>
+            <button class="vb" id="bfwd" title="10 s adelante (→)">10↻</button>
+            <button class="vb wide" id="bspeed" title="Velocidad">1x</button>
+            <span style="flex:1"></span>
+            <button class="vb" id="zout" title="Alejar (−)">−</button>
+            <button class="vb" id="zreset" title="Ver todo">1x</button>
+            <button class="vb" id="zin" title="Acercar (+)">+</button>
+            <button class="vb" id="bfull" title="Pantalla completa (F)">⛶</button>
+          </div>
+        </div>
+      </div>
+      <div class="webbox" id="webbox">
+        <div class="big" id="websec"></div>
+        <div class="small">Este curso está en Control Más+. La lección se abre en otra pestaña.</div>
+        <a class="play" id="weblink" target="_blank" rel="noopener" style="text-decoration:none">Abrir lección en Control Más+ ↗</a>
+        <div class="small">Al terminar la lección, vuelve aquí y pulsa "Marcar como visto".</div>
+      </div>
+      <div class="vmsg" id="vmsg">No se pudo cargar el video. Revisa tu internet o vuelve a entrar con Google.</div>
+      <div class="ctrl">
+        <button class="btn" id="prev">◀ Anterior</button>
+        <button class="btn main" id="next">Siguiente ▶</button>
+        <span style="flex:1"></span>
+        <button class="btn" id="mvisto">Marcar como visto</button>
+        <button class="btn" id="mprev">Marcar anteriores como vistos</button>
+      </div>
+      <p class="small ctrlhelp" style="margin:8px 16px 0 0">Zoom: pellizca con dos dedos, doble toque para acercar ahí, arrastra para moverte. En la PC: rueda del mouse, + y −.</p>
+    </div>
+    <aside class="side">
+      <h4>Actividad</h4>
+      <span class="badge" id="pbadge"></span>
+      <div class="act" id="pact"></div>
+      <div class="tool" id="ptool"></div>
+      <label class="check"><input type="checkbox" id="pdone"> Actividad hecha</label>
+      <h4>Mis notas</h4>
+      <textarea id="pnote" placeholder="Qué aprendí, dudas, en qué me trabé..."></textarea>
+      <p class="small">Se guarda en tu Google Drive. Tu Excel y tu bot leen este avance.</p>
+    </aside>
+  </div>
+</div>
+
+<script src="https://accounts.google.com/gsi/client"></script>
+<script src="drive.js"></script>
+<script src="zoom.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

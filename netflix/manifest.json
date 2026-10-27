@@ -1,0 +1,10 @@
+{
+  "name": "Netflix PLC",
+  "short_name": "Netflix PLC",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0f1116",
+  "theme_color": "#0f1116",
+  "icons": [{ "src": "icono.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
