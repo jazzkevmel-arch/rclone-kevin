@@ -17,6 +17,11 @@ const store = {
 const DEV = store.get("device") || (() => { const d = "d" + Math.random().toString(36).slice(2, 8); store.set("device", d); return d; })();
 
 let C = [], TIPOS = {}, CATS = [];
+// cuestionarios.json (optional, same Drive folder): mini quizzes made with NotebookLM from each video's transcript.
+//   { cursos: { <course id>: { cuaderno: <NotebookLM URL> } }, videos: { <video key>: [ { q, o: [options], c: <right index>, e: <why> } ] } }
+let QZ = { cursos: {}, videos: {} };
+const quizOf = v => QZ.videos[K(v)] || null;
+const quizPass = n => Math.ceil(n * 0.8);
 let S = { videos: {}, ultimo: null, uu: 0, md: {} };
 let ids = {}, filt = "ruta", soloPend = false, q = "", cur = null, lastTick = null;
 let saveT = null, busy = Promise.resolve(), dirty = false, exportDue = true, lastExport = 0;
@@ -180,6 +185,10 @@ const FOTO = {
 const lower1 = s => s.charAt(0).toLowerCase() + s.slice(1);
 function entrega(c, v) {
   if (v.k === "V") return { txt: "Nada. Solo mira el video: se marca solo al llegar al 90 %.", foto: false, nota: false };
+  if (v.k === "T" && quizOf(v)) {
+    const n = quizOf(v).length;
+    return { txt: `El mini cuestionario de abajo (${quizPass(n)} de ${n} bien) o tu respuesta en «Mis notas» (2 a 5 líneas). Con cualquiera de los dos, la actividad queda hecha.`, foto: false, nota: true, quiz: true };
+  }
   if (v.k === "T" || c.cat === "Idiomas")
     return { txt: "Tu respuesta escrita en «Mis notas» (2 a 5 líneas). Al escribirla, la actividad queda hecha.", foto: false, nota: true };
   const foto = FOTO[c.cat] || "1 captura o foto del resultado.";
@@ -193,7 +202,8 @@ function autoDone(c, v) {
   const st = V(v), e = entrega(c, v);
   if (v.k === "V" || st.act) return false;
   const notaOk = (st.nota || "").trim().length >= 30, fotoOk = (st.ev || []).length > 0;
-  if ((!e.foto || fotoOk) && (!e.nota || notaOk)) { st.act = true; touch(v); exportDue = true; return true; }
+  const quizOk = e.quiz && st.qz && st.qz.ok >= quizPass(st.qz.n);
+  if (quizOk || ((!e.foto || fotoOk) && (!e.nota || notaOk))) { st.act = true; touch(v); exportDue = true; return true; }
   return false;
 }
 
@@ -377,6 +387,48 @@ function renderSide(c, v) {
   $("pevs").innerHTML = (st.ev || []).map((f, i) =>
     `<a href="https://drive.google.com/file/d/${encodeURIComponent(f.id)}/view" target="_blank" rel="noopener">📷 Captura ${i + 1}</a>`).join("");
   $("pdone").checked = st.act;
+  renderQuiz(c, v);
+}
+// ---------- mini quiz ----------
+function renderQuiz(c, v) {
+  const qs = quizOf(v), nb = (QZ.cursos[c.id] || {}).cuaderno, st = V(v);
+  if (!qs) { $("pquiz").innerHTML = ""; return; }
+  const best = st.qz ? `<p class="small">Tu mejor resultado: ${st.qz.ok} de ${st.qz.n} (${esc(st.qz.f)}).</p>` : "";
+  $("pquiz").innerHTML = `<h4>Mini cuestionario</h4>${best}` +
+    qs.map((x, i) => `<div class="qz" data-q="${i}"><p>${i + 1}. ${esc(x.q)}</p>` +
+      x.o.map((o, j) => `<label><input type="radio" name="qz${i}" value="${j}"><span>${esc(o)}</span></label>`).join("") +
+      `<div class="why small" hidden></div></div>`).join("") +
+    `<button class="btn main" data-qcheck>Revisar respuestas</button><div class="qres" id="qres"></div>` +
+    (nb ? `<p class="small">¿Dudas? <a href="${esc(nb)}" target="_blank" rel="noopener">Pregúntale al curso en NotebookLM ↗</a></p>` : "");
+}
+function checkQuiz() {
+  if (!cur) return;
+  const c = C[cur.ci], v = curV(), qs = quizOf(v), st = V(v);
+  let ok = 0, answered = 0;
+  qs.forEach((x, i) => {
+    const box = document.querySelector(`.qz[data-q="${i}"]`), pick = box.querySelector("input:checked"), why = box.querySelector(".why");
+    if (pick) answered++;
+    const right = pick && +pick.value === x.c;
+    if (right) ok++;
+    box.querySelectorAll("label").forEach((l, j) => { l.className = j === x.c ? "ok" : pick && +pick.value === j ? "bad" : ""; });
+    why.hidden = false;
+    why.innerHTML = (right ? "✔ Correcto. " : "✘ Respuesta: " + esc(x.o[x.c]) + ". ") + esc(x.e || "");
+  });
+  if (answered < qs.length) { $("qres").textContent = `Te faltan ${qs.length - answered} preguntas.`; return; }
+  const pass = quizPass(qs.length);
+  if (!st.qz || ok >= st.qz.ok) st.qz = { ok, n: qs.length, f: today() };
+  touch(v);
+  const done = autoDone(c, v);
+  if (done) $("pdone").checked = true;
+  $("qres").textContent = `${ok} de ${qs.length} bien. ` + (ok >= pass ? (entrega(c, v).quiz ? "✔ Actividad hecha." : "✔ Bien.") : `Necesitas ${pass}: repasa el video y vuelve a intentar.`);
+  saveNow();
+}
+document.addEventListener("click", e => { if (e.target.closest("[data-qcheck]")) checkQuiz(); });
+async function loadQuiz() {
+  try {
+    const f = await Drive.find(ids.folder, "cuestionarios.json");
+    if (f) QZ = { cursos: {}, videos: {}, ...JSON.parse(await Drive.read(f.id)) };
+  } catch (_) { /* no quizzes: the app works the same */ }
 }
 async function addEvidence(files) {
   if (!cur) return;
@@ -591,6 +643,7 @@ async function start() {
     if (!fol) throw new Error("No encuentro la carpeta Mi unidad/Estudio/Netflix_PLC.");
     ids.folder = fol.id;
     await loadCatalog();
+    await loadQuiz();
     await pull();
     render();
     syncMsg("✔ Al día");

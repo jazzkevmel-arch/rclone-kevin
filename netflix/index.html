@@ -126,6 +126,17 @@
   .check input { width: 20px; height: 20px; accent-color: var(--accent); }
   textarea { width: 100%; min-height: 110px; background: var(--bg); color: var(--txt); border: 1px solid var(--line); border-radius: 8px; padding: 8px; font: inherit; }
   .small { color: var(--muted); font-size: 12px; }
+  /* mini quiz made with NotebookLM from the video's transcript */
+  #pquiz:empty { display: none; }
+  #pquiz { margin: 12px 0; }
+  #pquiz a { color: var(--accent); }
+  .qz { margin: 10px 0; padding: 10px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; }
+  .qz p { margin: 0 0 6px; font-weight: 600; }
+  .qz label { display: flex; gap: 8px; align-items: flex-start; padding: 5px 0; cursor: pointer; }
+  .qz input { margin-top: 3px; accent-color: var(--accent); }
+  .qz .ok { color: var(--accent); } .qz .bad { color: var(--red); }
+  .qz .why { margin-top: 6px; }
+  .qres { font-weight: 700; margin: 8px 0; }
   .vmsg { color: var(--red); margin-top: 8px; display: none; }
 
   /* video box with zoom: pinch, wheel or buttons to zoom, drag to move */
@@ -319,6 +330,7 @@
       <div class="act" id="pact"></div>
       <div class="tool" id="ptool"></div>
       <div class="entrega" id="pentrega"></div>
+      <div id="pquiz"></div>
       <div id="pevbox">
         <h4>Mis capturas</h4>
         <div class="evs" id="pevs"></div>
@@ -334,8 +346,8 @@
 </div>
 
 <script src="https://accounts.google.com/gsi/client"></script>
-<script src="drive.js?v=4"></script>
-<script src="zoom.js?v=4"></script>
-<script src="app.js?v=4"></script>
+<script src="drive.js?v=5"></script>
+<script src="zoom.js?v=5"></script>
+<script src="app.js?v=5"></script>
 </body>
 </html>
