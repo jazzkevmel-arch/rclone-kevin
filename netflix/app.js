@@ -19,7 +19,8 @@ const DEV = store.get("device") || (() => { const d = "d" + Math.random().toStri
 let C = [], TIPOS = {}, CATS = [];
 // cuestionarios.json (optional, same Drive folder): mini quizzes made with NotebookLM from each video's transcript.
 //   { cursos: { <course id>: { cuaderno: <NotebookLM URL> } }, videos: { <video key>: [ { q, o: [options], c: <right index>, e: <why> } ] } }
-let QZ = { cursos: {}, videos: {} };
+let QZ = { cursos: {}, videos: {}, tarjetas: {} };
+let tipoF = "todo", openCourses = new Set();
 const quizOf = v => QZ.videos[K(v)] || null;
 const quizPass = n => Math.ceil(n * 0.8);
 let S = { videos: {}, ultimo: null, uu: 0, md: {} };
@@ -318,7 +319,9 @@ function renderExp() {
       <div class="small">${done} de ${c.videos.length} vistos · ${esc(c.tool)}</div>
       <div class="bar" style="margin:10px 0 0;max-width:420px"><i style="width:${done / c.videos.length * 100}%"></i></div>
       ${nx >= 0 ? `<button class="bbtn w" data-open="${expCourse},${nx}">▶ ${V(c.videos[nx]).pos > 5 ? "Seguir" : done ? "Continuar" : "Empezar"}: episodio ${c.videos[nx].n}</button>` : ""}
-      <button class="bbtn g" data-pend="1">${soloPend ? "Ver todos" : "Solo pendientes"}</button></div>
+      <button class="bbtn g" data-pend="1">${soloPend ? "Ver todos" : "Solo pendientes"}</button>
+      ${(QZ.cursos[c.id] || {}).mapa ? `<button class="bbtn g" data-study="${esc(c.id)},mapa">🧠 Mapa mental</button>` : ""}
+      ${(QZ.cursos[c.id] || {}).guia ? `<button class="bbtn g" data-study="${esc(c.id)},guia">📖 Guía de estudio</button>` : ""}</div>
       <div class="vlist eps">`;
     let sec = null;
     c.videos.forEach((v, vi) => {
@@ -350,27 +353,59 @@ function renderExp() {
   $("view-exp").innerHTML = html;
 }
 
+// Kind of deliverable, shown as an icon and used by the filter.
+function tipoEntrega(c, v) {
+  const e = entrega(c, v);
+  return e.quiz ? "quiz" : v.k === "R" ? "reto" : e.foto ? "foto" : "nota";
+}
+const TIPO_E = { quiz: ["📝", "Cuestionario"], foto: ["📷", "Foto o captura"], nota: ["✍", "Nota escrita"], reto: ["🎯", "Reto"] };
+function actCard(c, ci, v, vi) {
+  const st = V(v), [ico, nom] = TIPO_E[tipoEntrega(c, v)];
+  return `<div class="acard ${st.act ? "hecho" : ""}">
+    <input type="checkbox" data-act="${ci},${vi}" ${st.act ? "checked" : ""} aria-label="Marcar entregada">
+    <div class="ab"><div class="small"><span class="badge k-${v.k}">${TIPOS[v.k]}</span> ${ico} ${nom} · Video ${v.n}${st.visto ? " · ✔ visto" : ""}</div>
+      <div class="at">${esc(v.a)}</div>
+      <div class="small">Entregas: ${esc(entrega(c, v).txt)}</div></div>
+    <button class="btn" data-open="${ci},${vi}">▶ Ir</button></div>`;
+}
 function renderActs() {
   const f = [["ruta", "Mi ruta"], ...CATS.filter(c => C.some(x => x.cat === c)).map(c => [c, c]), ["todo", "Todo"]];
   $("afilters").innerHTML = f.map(([n, t]) => `<button class="chip ${filt === n ? "on" : ""}" data-filt="${esc(n)}">${esc(t)}</button>`).join("") +
     `<button class="chip ${soloPend ? "on" : ""}" data-pend="1">Solo pendientes</button>` +
     `<input class="search" data-search="act" placeholder="Buscar..." value="${esc(q)}">` +
-    `<button class="chip" onclick="print()">Imprimir</button>`;
-  let html = "";
+    `<button class="chip" onclick="print()">Imprimir</button><div class="tipos">` +
+    [["todo", "Todas"], ...Object.entries(TIPO_E).map(([k, [i, n]]) => [k, i + " " + n])]
+      .map(([k, t]) => `<button class="chip ${tipoF === k ? "on" : ""}" data-tipo="${k}">${t}</button>`).join("") + "</div>";
+  const ok = (c, v) => v.k !== "V" && match(c, v) && (tipoF === "todo" || tipoEntrega(c, v) === tipoF);
+  // What comes next: pending activities in course order, watched videos first.
+  const next = all().filter(x => show(x.c, filt) && ok(x.c, x.v) && !V(x.v).act)
+    .sort((a, b) => (V(b.v).visto ? 1 : 0) - (V(a.v).visto ? 1 : 0)).slice(0, 5);
+  let html = next.length ? `<div class="anext"><h3>Te toca ahora</h3>${next.map(x => actCard(x.c, x.ci, x.v, x.vi)).join("")}</div>` : "";
+  let idx = "", body = "";
   C.forEach((c, ci) => {
     if (!show(c, filt)) return;
-    const rows = c.videos.map((v, vi) => {
-      const st = V(v);
-      if (v.k === "V" || (soloPend && st.act) || !match(c, v)) return "";
-      return `<tr class="${st.act ? "hecho" : ""}"><td class="c"><input type="checkbox" data-act="${ci},${vi}" ${st.act ? "checked" : ""}></td>
-        <td>${v.n}</td><td><span class="badge k-${v.k}">${TIPOS[v.k]}</span></td><td>${esc(v.a)}<div class="small">Entregas: ${esc(entrega(c, v).txt)}</div></td>
-        <td class="small" data-open="${ci},${vi}" style="cursor:pointer">${v.s ? esc(v.s) + " · " : ""}${esc(v.t)}${st.visto ? " ✔" : ""}</td></tr>`;
-    }).join("");
-    if (rows) html += `<h3>${esc(c.title)} <span class="small">${esc(c.cat)}</span></h3>
-      <table><thead><tr><th></th><th>#</th><th>Tipo</th><th>Actividad y entrega</th><th>Video</th></tr></thead><tbody>${rows}</tbody></table>`;
+    const acts = c.videos.map((v, vi) => ({ v, vi })).filter(x => ok(c, x.v));
+    if (!acts.length) return;
+    const done = acts.filter(x => V(x.v).act).length, list = soloPend ? acts.filter(x => !V(x.v).act) : acts;
+    if (!list.length) return;
+    idx += `<a href="#ac-${esc(c.id)}" class="chip">${esc(short(c.title))} <small>${done}/${acts.length}</small></a>`;
+    let sec = null, rows = "";
+    list.forEach(({ v, vi }) => {
+      if ((v.s || "") !== sec) { sec = v.s || ""; if (sec) rows += `<div class="vsec">${esc(sec)}</div>`; }
+      rows += actCard(c, ci, v, vi);
+    });
+    body += `<details class="acourse" id="ac-${esc(c.id)}" data-cid="${esc(c.id)}" ${openCourses.has(c.id) || q ? "open" : ""}>
+      <summary><b>${esc(c.title)}</b> <span class="small">${esc(c.cat)}</span>
+        <span class="aprog"><span class="bar"><i style="width:${done / acts.length * 100}%"></i></span> ${done} de ${acts.length} hechas</span></summary>
+      ${rows}</details>`;
   });
+  if (body) html += `<div class="aidx"><span class="small">Ir a:</span> ${idx}</div>${body}`;
   $("alist").innerHTML = html || '<p class="small">Nada con ese filtro.</p>';
 }
+document.addEventListener("toggle", e => {
+  const d = e.target; if (!d.dataset || !d.dataset.cid) return;
+  d.open ? openCourses.add(d.dataset.cid) : openCourses.delete(d.dataset.cid);
+}, true);
 function render() {
   if (!C.length) return;
   for (const t of ["hoy", "exp", "act"]) { $("view-" + t).hidden = view !== t; $("tab-" + t).classList.toggle("on", view === t); }
@@ -392,6 +427,7 @@ function renderSide(c, v) {
 // ---------- mini quiz ----------
 function renderQuiz(c, v) {
   const qs = quizOf(v), nb = (QZ.cursos[c.id] || {}).cuaderno, st = V(v);
+  renderCards(c, v);
   if (!qs) { $("pquiz").innerHTML = ""; return; }
   const best = st.qz ? `<p class="small">Tu mejor resultado: ${st.qz.ok} de ${st.qz.n} (${esc(st.qz.f)}).</p>` : "";
   $("pquiz").innerHTML = `<h4>Mini cuestionario</h4>${best}` +
@@ -400,6 +436,54 @@ function renderQuiz(c, v) {
       `<div class="why small" hidden></div></div>`).join("") +
     `<button class="btn main" data-qcheck>Revisar respuestas</button><div class="qres" id="qres"></div>` +
     (nb ? `<p class="small">¿Dudas? <a href="${esc(nb)}" target="_blank" rel="noopener">Pregúntale al curso en NotebookLM ↗</a></p>` : "");
+}
+// Study aids from NotebookLM: card deck per video, mind map and study guide per course.
+let deck = null;
+function renderCards(c, v) {
+  const cards = QZ.tarjetas[K(v)], co = QZ.cursos[c.id] || {};
+  const extra = (co.mapa ? `<button class="btn" data-study="${esc(c.id)},mapa">🧠 Mapa mental del curso</button>` : "") +
+    (co.guia ? `<button class="btn" data-study="${esc(c.id)},guia">📖 Guía de estudio</button>` : "");
+  deck = cards && cards.length ? { cards, i: 0 } : null;
+  $("pcards").innerHTML = (deck ? `<h4>Tarjetas de repaso</h4><p class="small">Toca la tarjeta para ver la respuesta.</p>
+    <div class="fcard" id="fcard" data-flip><div class="ff"></div><div class="fb"></div></div>
+    <div class="fnav"><button class="btn" data-fmove="-1">◀</button><span id="fpos"></span><button class="btn" data-fmove="1">▶</button></div>` : "") +
+    (extra ? `<div class="fextra">${extra}</div>` : "");
+  if (deck) moveCard(0);
+}
+function moveCard(d) {
+  if (!deck) return;
+  deck.i = (deck.i + d + deck.cards.length) % deck.cards.length;
+  const x = deck.cards[deck.i], box = $("fcard");
+  box.classList.remove("flip");
+  box.querySelector(".ff").textContent = x.f; box.querySelector(".fb").textContent = x.b;
+  $("fpos").textContent = `${deck.i + 1} de ${deck.cards.length}`;
+}
+function mapTree(n, depth) {
+  const kids = n.children || [];
+  if (!kids.length) return `<li>${esc(n.name)}</li>`;
+  return `<li><details ${depth < 1 ? "open" : ""}><summary>${esc(n.name)}</summary><ul>${kids.map(k => mapTree(k, depth + 1)).join("")}</ul></details></li>`;
+}
+// Small Markdown reader for the study guide (headings, lists, bold, paragraphs).
+function md(text) {
+  const inl = t => esc(t).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/\*(.+?)\*/g, "<i>$1</i>");
+  let out = "", list = false;
+  for (const line of text.split(/\r?\n/)) {
+    const h = line.match(/^(#{1,4})\s+(.*)/), li = line.match(/^\s*(?:[-*]|\d+\.)\s+(.*)/);
+    if (!li && list) { out += "</ul>"; list = false; }
+    if (/^\s*-{3,}\s*$/.test(line)) out += "<hr>";
+    else if (h) { const n = Math.min(h[1].length + 2, 6); out += `<h${n}>${inl(h[2])}</h${n}>`; }
+    else if (li) { if (!list) { out += "<ul>"; list = true; } out += `<li>${inl(li[1])}</li>`; }
+    else if (line.trim()) out += `<p>${inl(line)}</p>`;
+  }
+  return out + (list ? "</ul>" : "");
+}
+function openStudy(cid, kind) {
+  const co = QZ.cursos[cid] || {}, c = C.find(x => x.id === cid);
+  const body = kind === "mapa" ? `<ul class="mmap">${mapTree(co.mapa, 0)}</ul>` : md(co.guia || "");
+  $("study").innerHTML = `<div class="sbox"><button class="btn sclose" data-study-close>✕ Cerrar</button>
+    <div class="kicker">${kind === "mapa" ? "Mapa mental" : "Guía de estudio"}</div><h2>${esc(c ? c.title : "")}</h2>${body}
+    ${co.cuaderno ? `<p class="small"><a href="${esc(co.cuaderno)}" target="_blank" rel="noopener">Abrir el curso en NotebookLM ↗</a></p>` : ""}</div>`;
+  $("study").hidden = false;
 }
 function checkQuiz() {
   if (!cur) return;
@@ -427,7 +511,7 @@ document.addEventListener("click", e => { if (e.target.closest("[data-qcheck]"))
 async function loadQuiz() {
   try {
     const f = await Drive.find(ids.folder, "cuestionarios.json");
-    if (f) QZ = { cursos: {}, videos: {}, ...JSON.parse(await Drive.read(f.id)) };
+    if (f) QZ = { cursos: {}, videos: {}, tarjetas: {}, ...JSON.parse(await Drive.read(f.id)) };
   } catch (_) { /* no quizzes: the app works the same */ }
 }
 async function addEvidence(files) {
@@ -548,6 +632,16 @@ document.addEventListener("click", e => {
   const f = t.closest("[data-filt]");
   if (f) { filt = f.dataset.filt; return render(); }
   if (t.closest("[data-pend]")) { soloPend = !soloPend; return render(); }
+  const tp = t.closest("[data-tipo]");
+  if (tp) { tipoF = tp.dataset.tipo; return render(); }
+  const ia = t.closest(".aidx a");
+  if (ia) { const d = document.querySelector(ia.getAttribute("href")); if (d) { d.open = true; openCourses.add(d.dataset.cid); } return; }
+  const sd = t.closest("[data-study]");
+  if (sd) { const [cid, kind] = sd.dataset.study.split(","); return openStudy(cid, kind); }
+  if (t.closest("[data-study-close]") || t.id === "study") { $("study").hidden = true; return; }
+  if (t.closest("[data-flip]")) return $("fcard").classList.toggle("flip");
+  const fm = t.closest("[data-fmove]");
+  if (fm) return moveCard(+fm.dataset.fmove);
 });
 let searchT = null;
 document.addEventListener("input", e => {
@@ -587,7 +681,7 @@ function sessionCheck() {
   else if (m <= 8) warn(`Tu sesión de Google vence en ${m} min. <button class="btn main" data-renew>Renovar ahora</button>`);
   else warn("");
 }
-document.addEventListener("click", e => { if (e.target.closest("[data-renew]")) Drive.login(); });
+document.addEventListener("click", e => { if (e.target.closest("[data-renew]")) Drive.login(); else Drive.renewOnTap(); }, true);
 setInterval(sessionCheck, 30000);
 
 async function sendTokenToWorker() {
@@ -642,6 +736,7 @@ async function start() {
     const fol = await Drive.find(ids.estudio, "Netflix_PLC", true);
     if (!fol) throw new Error("No encuentro la carpeta Mi unidad/Estudio/Netflix_PLC.");
     ids.folder = fol.id;
+    Drive.rememberEmail();
     await loadCatalog();
     await loadQuiz();
     await pull();
@@ -658,7 +753,12 @@ function boot() {
   Drive.onToken = start;
   Drive.onExpired = sessionCheck;
   if (Drive.init()) start();
-  else $("login").hidden = false;
+  else {
+    $("login").hidden = false;
+    let email = null;
+    try { email = localStorage.getItem("gmail"); } catch (_) { /* storage blocked */ }
+    if (email) { $("blogin").textContent = "Continuar como " + email; $("lmsg").textContent = "Un toque y entras, sin volver a elegir cuenta."; }
+  }
 }
 $("blogin").onclick = () => Drive.login();
 boot();

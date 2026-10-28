@@ -30,10 +30,27 @@ const Drive = {
     return !!this.token;
   },
   // Must run from a tap or click: it opens Google's sign-in window.
+  // Google tokens last 1 hour and this static site has no server to refresh them. So, after the first
+  // sign-in, the saved email goes as login_hint: Google skips the account chooser and the window closes by itself.
   login() {
+    let known = false, email = "";
+    try { known = !!localStorage.getItem("glogged"); email = localStorage.getItem("gmail") || ""; } catch (_) { /* storage blocked */ }
+    this.lastTry = Date.now();
+    this.client.requestAccessToken({ prompt: known ? "" : "consent", ...(email ? { login_hint: email } : {}) });
+  },
+  // Called on every tap: renews the token in the background when it is about to expire.
+  // A tap is needed because browsers block the Google window without one.
+  renewOnTap() {
     let known = false;
     try { known = !!localStorage.getItem("glogged"); } catch (_) { /* storage blocked */ }
-    this.client.requestAccessToken({ prompt: known ? "" : "consent" });
+    if (known && this.client && this.minutesLeft() <= 10 && Date.now() - (this.lastTry || 0) > 120000) this.login();
+  },
+  async rememberEmail() {
+    try {
+      if (localStorage.getItem("gmail")) return;
+      const r = await this.req(API + "about?fields=user(emailAddress)");
+      localStorage.setItem("gmail", (await r.json()).user.emailAddress);
+    } catch (_) { /* optional */ }
   },
   valid() { return this.token && Date.now() < this.exp; },
   minutesLeft() { return Math.max(0, Math.round((this.exp - Date.now()) / 60000)); },
