@@ -283,7 +283,7 @@ function renderHoy() {
   let bill = "";
   if (h) {
     const hs = V(h.v), e = entrega(h.c, h.v);
-    const play = h.c.web ? "↗ Abrir lección" : hs.pos > 5 ? "▶ Seguir en " + mm(hs.pos) : "▶ Reproducir";
+    const play = isWeb(h.c, h.v) ? "↗ Abrir lección" : hs.pos > 5 ? "▶ Seguir en " + mm(hs.pos) : "▶ Reproducir";
     bill = `<section class="bill"><div class="bg" style="--h:${hue(h.c)}" data-n="${h.v.n}"></div><div class="fade"></div><div class="in">
       <div class="kicker">${hs.pos > 5 ? "Continuar viendo" : "Siguiente en tu plan"} · ${esc(h.c.cat)}</div>
       <h1>${esc(h.v.t)}</h1>
@@ -548,8 +548,23 @@ async function addEvidence(files) {
     $("pevmsg").textContent = "No se pudo subir: " + err.message;
   }
 }
+// Control Más+ (EPLAN) lessons stream from Bunny Stream (HLS). v.b is the Bunny video ID, so they play
+// in this player with speed, subtitles and zoom. Chrome on PC needs hls.js; phones and Safari play HLS natively.
+const BUNNY = "https://vz-8115f9c6-089.b-cdn.net/";
+let hls = null;
+const isWeb = (c, v) => !!c.web && !v.b;
+function setSource(vid, v) {
+  if (hls) { hls.destroy(); hls = null; }
+  if (!v.b) { vid.src = "v/" + v.d; return; }
+  const url = BUNNY + v.b + "/playlist.m3u8";
+  if (window.Hls && Hls.isSupported()) {
+    hls = new Hls();
+    hls.on(Hls.Events.ERROR, (_, d) => { if (d.fatal) { $("vmsg").style.display = "block"; $("vwait").style.display = "none"; } });
+    hls.loadSource(url); hls.attachMedia(vid);
+  } else vid.src = url;
+}
 async function openVid(ci, vi) {
-  const c = C[ci], v = c.videos[vi], vid = $("video"), web = !!c.web;
+  const c = C[ci], v = c.videos[vi], vid = $("video"), web = isWeb(c, v);
   cur = { ci, vi };
   $("expmenu").hidden = true;
   $("ptitle").textContent = `${c.title} · ${v.n}. ${v.t}`;
@@ -562,6 +577,7 @@ async function openVid(ci, vi) {
   $("webbox").style.display = web ? "flex" : "none";
   $("player").classList.add("open");
   document.body.style.overflow = "hidden";
+  if (hls) { hls.destroy(); hls = null; }
   vid.pause(); vid.removeAttribute("src"); vid.load(); Zoom.reset();
   if (!web) $("vwait").style.display = "flex";
   // Get the newest position saved from the other device before resuming.
@@ -573,7 +589,7 @@ async function openVid(ci, vi) {
   renderSide(c, v);
   $("mvisto").textContent = st.visto ? "✔ Visto" : "Marcar como visto";
   if (web) { $("websec").textContent = (v.s ? v.s + " · " : "") + v.t; $("weblink").href = v.url; return; }
-  vid.src = "v/" + v.d;
+  setSource(vid, v);
   loadSubs(c, v);
   vid.onloadedmetadata = () => {
     $("vwait").style.display = "none";
@@ -584,6 +600,7 @@ async function openVid(ci, vi) {
 }
 function closeVid() {
   const vid = $("video");
+  if (hls) { hls.destroy(); hls = null; }
   vid.pause(); vid.removeAttribute("src"); vid.load(); $("vwait").style.display = "none";
   Zoom.exitFull(); Zoom.reset();
   $("player").classList.remove("open"); document.body.style.overflow = ""; cur = null; lastTick = null;
@@ -598,7 +615,7 @@ function step(d) {
 }
 const curV = () => C[cur.ci].videos[cur.vi];
 $("video").addEventListener("timeupdate", e => {
-  if (!cur || C[cur.ci].web) return;
+  if (!cur || isWeb(C[cur.ci], curV())) return;
   const vid = e.target, c = C[cur.ci], v = curV(), st = V(v), now = performance.now();
   if (!vid.paused && lastTick) addMin(c.cat, Math.min(5, (now - lastTick) / 60000));
   lastTick = vid.paused ? null : now;
