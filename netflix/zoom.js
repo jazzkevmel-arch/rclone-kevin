@@ -1,13 +1,21 @@
 // Player controls with zoom, made for reading PLC programs on a small phone screen.
 // Phone: pinch to zoom, double tap to zoom in at that spot (or back to 1x), drag to move, tap to show the controls.
-// PC: mouse wheel to zoom, drag to move, click to play or pause, keys + − 0 F, space and arrows.
+// PC: mouse wheel to zoom, drag to move, click to play or pause, keys + − 0 F C < >, space and arrows.
+// Both: press and hold the video to watch at 2x while holding; ⚙ menu for any speed and subtitle style.
 const Zoom = (() => {
   const box = document.getElementById("vbox"), vid = document.getElementById("video");
   const $ = id => document.getElementById(id);
-  const MAX = 6, SPEEDS = [1, 1.25, 1.5, 1.75, 2];
+  const MAX = 6, SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3];
   let z = 1, tx = 0, ty = 0, hideT = null, tapT = null, lastTap = 0, seeking = false;
   const pts = new Map();
-  let pinch = null, drag = null, moved = false, downAt = 0;
+  let pinch = null, drag = null, moved = false, downAt = 0, holdT = null, held = null;
+  const menuOpen = () => !$("vmenu").hidden;
+  function endHold() {
+    clearTimeout(holdT);
+    if (held === null) return false;
+    vid.playbackRate = held; held = null; $("fast").hidden = true;
+    return true;
+  }
 
   const size = () => ({ w: box.clientWidth, h: box.clientHeight });
   function apply() {
@@ -45,16 +53,24 @@ const Zoom = (() => {
 
   // Gestures on the video area (not on the control bar).
   box.addEventListener("pointerdown", e => {
-    if (e.target.closest(".vbar")) return;
-    box.setPointerCapture(e.pointerId);
+    if (e.target.closest(".vbar, .vmenu")) return;
+    try { box.setPointerCapture(e.pointerId); } catch (_) { /* pointer already gone */ }
     pts.set(e.pointerId, local(e));
     moved = false; downAt = Date.now();
     if (pts.size === 2) {
       const [a, b] = [...pts.values()];
       pinch = { d: Math.hypot(a[0] - b[0], a[1] - b[1]), z, mx: (a[0] + b[0]) / 2, my: (a[1] + b[1]) / 2 };
       drag = null;
+      endHold();
     } else if (pts.size === 1) {
       drag = { x: local(e)[0], y: local(e)[1] };
+      // Hold still for half a second: 2x (3x if already at 2x or more) until the finger lifts.
+      clearTimeout(holdT);
+      holdT = setTimeout(() => {
+        if (moved || pts.size !== 1 || vid.paused || menuOpen()) return;
+        held = vid.playbackRate; vid.playbackRate = held >= 2 ? 3 : 2;
+        $("fast").textContent = vid.playbackRate + "x ▸▸"; $("fast").hidden = false;
+      }, 500);
     }
   });
   box.addEventListener("pointermove", e => {
@@ -69,7 +85,7 @@ const Zoom = (() => {
       moved = true;
     } else if (drag) {
       const dx = p[0] - drag.x, dy = p[1] - drag.y;
-      if (Math.abs(dx) + Math.abs(dy) > 6) moved = true;
+      if (Math.abs(dx) + Math.abs(dy) > 6) { moved = true; if (held === null) clearTimeout(holdT); }
       if (moved && z > 1) { tx += dx; ty += dy; apply(); }
       drag = { x: p[0], y: p[1] };
     }
@@ -81,7 +97,9 @@ const Zoom = (() => {
     if (pts.size < 2) pinch = null;
     if (pts.size === 1) { const [q] = pts.values(); drag = { x: q[0], y: q[1] }; return; }
     drag = null;
+    if (endHold()) return;
     if (moved || Date.now() - downAt > 400 || e.type === "pointercancel") return;
+    if (menuOpen()) { $("vmenu").hidden = true; return; }
     const now = Date.now();
     if (now - lastTap < 300) {            // double tap: zoom in at that point, or back to 1x
       clearTimeout(tapT); lastTap = 0;
@@ -95,13 +113,13 @@ const Zoom = (() => {
   box.addEventListener("pointerup", up);
   box.addEventListener("pointercancel", up);
   box.addEventListener("wheel", e => {
-    if (e.target.closest(".vbar")) return;
+    if (e.target.closest(".vbar, .vmenu")) return;
     e.preventDefault();
     const [px, py] = local(e);
     zoomAt(z * (e.deltaY < 0 ? 1.2 : 1 / 1.2), px, py);
   }, { passive: false });
   box.addEventListener("dblclick", e => e.preventDefault());
-  new ResizeObserver(apply).observe(box);
+  new ResizeObserver(() => { apply(); if (typeof styleSubs === "function") styleSubs(); }).observe(box);
 
   // Control bar.
   const fmt = s => { s = Math.max(0, Math.floor(s || 0)); const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60;
@@ -122,11 +140,73 @@ const Zoom = (() => {
   $("zin").onclick = () => zoomAt(z * 1.5, ...center());
   $("zout").onclick = () => zoomAt(z / 1.5, ...center());
   $("zreset").onclick = reset;
+  // ---------- speed (any value from 0.25x to 3x, like YouTube) ----------
   function setSpeed(s) {
-    vid.playbackRate = s; $("bspeed").textContent = s + "x";
+    s = Math.round(Math.min(3, Math.max(0.25, +s || 1)) * 100) / 100;
+    held = null; $("fast").hidden = true;
+    vid.playbackRate = s; $("bspeed").textContent = s + "x ⚙"; $("mspeed").textContent = s + "x";
+    $("rspeed").value = s;
+    $("speeds").querySelectorAll("button").forEach(b => b.classList.toggle("on", +b.dataset.s === s));
     try { localStorage.setItem("speed", s); } catch (_) { /* storage blocked */ }
   }
-  $("bspeed").onclick = () => setSpeed(SPEEDS[(SPEEDS.indexOf(vid.playbackRate) + 1) % SPEEDS.length] || 1);
+  $("speeds").innerHTML = SPEEDS.map(s => `<button data-s="${s}">${s === 1 ? "Normal" : s + "x"}</button>`).join("");
+  $("speeds").onclick = e => { const b = e.target.closest("button"); if (b) setSpeed(b.dataset.s); };
+  $("rspeed").oninput = () => setSpeed($("rspeed").value);
+  $("bspeed").onclick = () => { $("vmenu").hidden = !$("vmenu").hidden; showBar(); };
+
+  // ---------- subtitles: own overlay so size, color and background can be chosen ----------
+  const COLORS = ["#ffffff", "#ffeb3b", "#7fffd4", "#9be15d", "#ffb4a2"];
+  const BGS = [["no", "Sin fondo"], ["semi", "Semitransparente"], ["solid", "Negro"]];
+  const POS = [["bottom", "Abajo"], ["top", "Arriba"]];
+  let cues = [], sp = { on: true, size: 22, color: "#ffffff", bg: "semi", shadow: true, pos: "bottom" };
+  try { sp = { ...sp, ...JSON.parse(localStorage.getItem("subs") || "{}") }; } catch (_) { /* storage blocked */ }
+  function styleSubs() {
+    // Size is chosen for a 360 px tall video and grows or shrinks with the player (phone, PC, full screen).
+    const t = $("subtxt").style, k = Math.min(2, Math.max(0.6, box.clientHeight / 360));
+    t.fontSize = Math.round(sp.size * k) + "px";
+    t.color = sp.color;
+    t.background = sp.bg === "no" ? "transparent" : sp.bg === "semi" ? "rgba(0,0,0,.55)" : "#000";
+    t.textShadow = sp.shadow ? "0 0 3px #000, 0 0 3px #000, 1px 1px 2px #000" : "none";
+    $("subs").classList.toggle("top", sp.pos === "top");
+    $("son").checked = sp.on; $("ssize").value = sp.size; $("ssizev").textContent = sp.size + " px"; $("sshadow").checked = sp.shadow;
+    $("bcc").classList.toggle("on", sp.on && cues.length > 0);
+    $("bcc").classList.toggle("off", !cues.length);
+    $("snone").textContent = cues.length ? "" : "(este video aún no tiene)";
+    [["scolors", sp.color], ["sbgs", sp.bg], ["spos", sp.pos]].forEach(([id, v]) =>
+      $(id).querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.v === v)));
+    showCue();
+  }
+  function saveSubs() { try { localStorage.setItem("subs", JSON.stringify(sp)); } catch (_) { /* storage blocked */ } styleSubs(); }
+  $("scolors").innerHTML = COLORS.map(c => `<button class="sw" data-v="${c}" style="background:${c}" aria-label="Color ${c}"></button>`).join("");
+  $("sbgs").innerHTML = BGS.map(([v, t]) => `<button data-v="${v}">${t}</button>`).join("");
+  $("spos").innerHTML = POS.map(([v, t]) => `<button data-v="${v}">${t}</button>`).join("");
+  const pick = (id, key) => { $(id).onclick = e => { const b = e.target.closest("button"); if (b) { sp[key] = b.dataset.v; saveSubs(); } }; };
+  pick("scolors", "color"); pick("sbgs", "bg"); pick("spos", "pos");
+  $("son").onchange = () => { sp.on = $("son").checked; saveSubs(); };
+  $("sshadow").onchange = () => { sp.shadow = $("sshadow").checked; saveSubs(); };
+  $("ssize").oninput = () => { sp.size = +$("ssize").value; saveSubs(); };
+  $("bcc").onclick = () => { if (!cues.length) { $("vmenu").hidden = false; return; } sp.on = !sp.on; saveSubs(); };
+  let lastCue = null;
+  function showCue() {
+    const t = vid.currentTime, c = sp.on ? cues.find(x => t >= x.a && t <= x.b) : null;
+    if (c === lastCue) return;
+    lastCue = c;
+    $("subs").hidden = !c; $("subtxt").textContent = c ? c.t : "";
+  }
+  vid.addEventListener("timeupdate", showCue);
+  vid.addEventListener("seeked", showCue);
+  const sec = s => { const p = s.trim().split(":").map(parseFloat); return p.reduce((acc, x) => acc * 60 + x, 0); };
+  function setSubs(text) {
+    cues = [];
+    for (const block of (text || "").replace(/\r/g, "").split(/\n\n+/)) {
+      const lines = block.split("\n"), i = lines.findIndex(l => l.includes("-->"));
+      if (i < 0) continue;
+      const [a, b] = lines[i].split("-->");
+      cues.push({ a: sec(a), b: sec(b.split(" ").filter(Boolean)[0]), t: lines.slice(i + 1).join("\n") });
+    }
+    lastCue = undefined; styleSubs();
+  }
+  styleSubs();
   vid.addEventListener("loadedmetadata", () => {
     let s = 1;
     try { s = +localStorage.getItem("speed") || 1; } catch (_) { /* storage blocked */ }
@@ -148,6 +228,7 @@ const Zoom = (() => {
     $("bfull").classList.toggle("on", !!document.fullscreenElement);
     if (!document.fullscreenElement) { try { screen.orientation.unlock(); } catch (_) { /* not supported */ } }
     requestAnimationFrame(apply);
+    styleSubs();
   });
 
   document.addEventListener("keydown", e => {
@@ -160,9 +241,12 @@ const Zoom = (() => {
     else if (k === "-") zoomAt(z / 1.5, ...center());
     else if (k === "0") reset();
     else if (k === "f" || k === "F") full();
+    else if (k === "c" || k === "C") $("bcc").click();
+    else if (k === ">" || k === ".") setSpeed(vid.playbackRate + 0.25);
+    else if (k === "<" || k === ",") setSpeed(vid.playbackRate - 0.25);
     else return;
     showBar();
   });
 
-  return { reset, showBar, exitFull() { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); } };
+  return { reset, showBar, setSubs, exitFull() { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); } };
 })();

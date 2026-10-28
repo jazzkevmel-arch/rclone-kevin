@@ -508,6 +508,22 @@ function checkQuiz() {
   saveNow();
 }
 document.addEventListener("click", e => { if (e.target.closest("[data-qcheck]")) checkQuiz(); });
+// Subtitles made by transcribir_curso.py: Netflix_PLC/subtitulos/<course id>/NN.vtt in Drive.
+const subFolders = {};
+async function loadSubs(c, v) {
+  Zoom.setSubs("");
+  try {
+    const key = K(v);
+    if (subFolders.root === undefined) subFolders.root = (await Drive.find(ids.folder, "subtitulos", true)) || null;
+    if (!subFolders.root) return;
+    if (subFolders[c.id] === undefined) subFolders[c.id] = (await Drive.find(subFolders.root.id, c.id, true)) || null;
+    if (!subFolders[c.id]) return;
+    const f = await Drive.find(subFolders[c.id].id, String(v.n).padStart(2, "0") + ".vtt");
+    if (!f) return;
+    const text = await Drive.read(f.id);
+    if (cur && K(curV()) === key) Zoom.setSubs(text);
+  } catch (_) { /* no subtitles: the video plays the same */ }
+}
 async function loadQuiz() {
   try {
     const f = await Drive.find(ids.folder, "cuestionarios.json");
@@ -558,6 +574,7 @@ async function openVid(ci, vi) {
   $("mvisto").textContent = st.visto ? "✔ Visto" : "Marcar como visto";
   if (web) { $("websec").textContent = (v.s ? v.s + " · " : "") + v.t; $("weblink").href = v.url; return; }
   vid.src = "v/" + v.d;
+  loadSubs(c, v);
   vid.onloadedmetadata = () => {
     $("vwait").style.display = "none";
     if (st.pos > 5 && st.pos < vid.duration - 15) vid.currentTime = st.pos;

@@ -159,6 +159,28 @@
   .mini i { position: absolute; border: 2px solid var(--accent); }
   .vbox.zoomed .mini { display: block; }
   .vbox.hide .mini { opacity: .5; }
+  /* subtitles, speed menu and hold-for-2x */
+  .subs { position: absolute; left: 4%; right: 4%; bottom: 92px; text-align: center; pointer-events: none; transition: bottom .25s; z-index: 2; }
+  .vbox.hide .subs { bottom: 18px; }
+  .subs.top { top: 14px; bottom: auto !important; }
+  .subs span { display: inline; line-height: 1.35; padding: 2px 8px; border-radius: 4px; box-decoration-break: clone; -webkit-box-decoration-break: clone; white-space: pre-line; }
+  .fast { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,.65); color: #fff; font-weight: 700; padding: 5px 14px; border-radius: 20px; z-index: 3; pointer-events: none; }
+  .vmenu { position: absolute; right: 8px; bottom: 96px; width: min(330px, calc(100% - 16px)); max-height: calc(100% - 110px); overflow: auto; z-index: 4;
+           background: rgba(18,19,23,.96); color: #eee; border: 1px solid #333; border-radius: 10px; padding: 10px 12px; font-size: 14px; touch-action: auto; }
+  .vbox:fullscreen .vmenu { max-height: calc(100% - 120px); }
+  .vmh { font-weight: 700; margin: 6px 0; display: flex; justify-content: space-between; align-items: center; }
+  .vmsmall { font-size: 12px; color: #9aa; font-weight: 400; }
+  .vchips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .vchips button { background: rgba(255,255,255,.1); color: #fff; border: 1px solid transparent; border-radius: 6px; padding: 5px 9px; font-size: 13px; }
+  .vchips button.on { border-color: var(--accent); background: rgba(46,204,160,.18); }
+  .vchips .sw { width: 26px; height: 26px; padding: 0; border-radius: 50%; border: 2px solid #555; }
+  .vchips .sw.on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+  .vmenu input[type=range] { width: 100%; accent-color: var(--accent); }
+  .vmrow { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
+  .vmrow input[type=range] { flex: 1; }
+  .vchk { display: flex; gap: 8px; align-items: center; margin: 8px 0; }
+  .vchk input { accent-color: var(--accent); width: 18px; height: 18px; }
+  #bcc.off { opacity: .45; }
   .webbox { aspect-ratio: 16 / 9; background: linear-gradient(135deg, #1b2a2a, #20242e); border-radius: 10px; display: none;
             flex-direction: column; align-items: center; justify-content: center; gap: 12px; text-align: center; padding: 24px; }
   .webbox .big { font-size: 20px; font-weight: 700; }
@@ -182,7 +204,8 @@
     .menu { position: fixed; left: 12px; right: 12px; top: 56px; }
     .stat b { font-size: 16px; }
     .search { min-width: 0; flex: 1 1 160px; }
-    .vb.wide { display: none; }
+    .vb { min-width: 34px; padding: 0 7px; }
+    #zout, #zin { display: none; }
   }
   @media print {
     header nav, .stats, .filters, .warn, .sync { display: none; }
@@ -323,6 +346,21 @@
         <div class="vwait" id="vwait">Cargando desde Google Drive...</div>
         <div class="zlabel" id="zlabel" hidden></div>
         <div class="mini" id="mini"><i id="minibox"></i></div>
+        <div class="subs" id="subs" hidden><span id="subtxt"></span></div>
+        <div class="fast" id="fast" hidden>2x ▸▸</div>
+        <div class="vmenu" id="vmenu" hidden>
+          <div class="vmh">Velocidad <b id="mspeed">1x</b></div>
+          <div class="vchips" id="speeds"></div>
+          <input type="range" id="rspeed" min="0.25" max="3" step="0.05" aria-label="Velocidad personalizada">
+          <div class="vmh">Subtítulos <span class="vmsmall" id="snone"></span></div>
+          <label class="vchk"><input type="checkbox" id="son"> Mostrar subtítulos</label>
+          <div class="vmrow">Tamaño <input type="range" id="ssize" min="12" max="48" step="1"> <b id="ssizev"></b></div>
+          <div class="vmrow">Letra <span class="vchips" id="scolors"></span></div>
+          <div class="vmrow">Fondo <span class="vchips" id="sbgs"></span></div>
+          <label class="vchk"><input type="checkbox" id="sshadow"> Contorno oscuro en la letra</label>
+          <div class="vmrow">Posición <span class="vchips" id="spos"></span></div>
+          <p class="vmsmall">Mantén presionado el video para verlo a 2x mientras lo sostienes.</p>
+        </div>
         <div class="vbar" id="vbar">
           <div class="vrow">
             <span class="vtime" id="tnow">0:00</span>
@@ -333,7 +371,8 @@
             <button class="vb" id="bplay" title="Reproducir o pausar (espacio)">▶</button>
             <button class="vb" id="bback" title="10 s atrás (←)">↺10</button>
             <button class="vb" id="bfwd" title="10 s adelante (→)">10↻</button>
-            <button class="vb wide" id="bspeed" title="Velocidad">1x</button>
+            <button class="vb" id="bspeed" title="Velocidad y subtítulos">1x ⚙</button>
+            <button class="vb" id="bcc" title="Subtítulos (C)">CC</button>
             <span style="flex:1"></span>
             <button class="vb" id="zout" title="Alejar (−)">−</button>
             <button class="vb" id="zreset" title="Ver todo">1x</button>
@@ -381,8 +420,8 @@
 </div>
 
 <script src="https://accounts.google.com/gsi/client"></script>
-<script src="drive.js?v=7"></script>
-<script src="zoom.js?v=7"></script>
-<script src="app.js?v=7"></script>
+<script src="drive.js?v=8"></script>
+<script src="zoom.js?v=8"></script>
+<script src="app.js?v=8"></script>
 </body>
 </html>
