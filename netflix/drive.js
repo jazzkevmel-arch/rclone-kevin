@@ -43,6 +43,7 @@ const Drive = {
   renewOnTap() {
     let known = false;
     try { known = !!localStorage.getItem("glogged"); } catch (_) { /* storage blocked */ }
+    if (this.llavero()) return; // the keeper renews by itself
     if (known && this.client && this.minutesLeft() <= 10 && Date.now() - (this.lastTry || 0) > 120000) this.login();
   },
   async rememberEmail() {
@@ -52,13 +53,37 @@ const Drive = {
       localStorage.setItem("gmail", (await r.json()).user.emailAddress);
     } catch (_) { /* optional */ }
   },
+  // "Llavero": a Google Apps Script web app in the user's own account that hands out fresh Drive tokens.
+  // Paired once per device (URL + secret key in localStorage); after that the app never shows Google sign-in.
+  llavero() { try { return JSON.parse(localStorage.getItem("llavero") || "null"); } catch (_) { return null; } },
+  async fromLlavero() {
+    const l = this.llavero();
+    if (!l) return false;
+    if (this.pending) return this.pending;
+    this.pending = (async () => {
+      try {
+        // text/plain keeps it a simple request (no CORS preflight, which Apps Script does not answer).
+        const r = await fetch(l.u, { method: "POST", headers: { "Content-Type": "text/plain" }, body: JSON.stringify({ k: l.k }) });
+        const d = await r.json();
+        if (!d.t) return false;
+        this.token = d.t; this.exp = Date.now() + (d.s || 3000) * 1000;
+        try { localStorage.setItem("gtoken", JSON.stringify({ t: this.token, exp: this.exp })); } catch (_) { /* storage blocked */ }
+        this.onToken && this.onToken(this.token);
+        return true;
+      } catch (_) { return false; } finally { this.pending = null; }
+    })();
+    return this.pending;
+  },
   valid() { return this.token && Date.now() < this.exp; },
   minutesLeft() { return Math.max(0, Math.round((this.exp - Date.now()) / 60000)); },
 
   async req(url, opt = {}) {
-    if (!this.valid()) { this.onExpired && this.onExpired(); throw new Error("sesión vencida"); }
+    if (!this.valid() && !(await this.fromLlavero())) { this.onExpired && this.onExpired(); throw new Error("sesión vencida"); }
     const r = await fetch(url, { ...opt, headers: { ...(opt.headers || {}), Authorization: "Bearer " + this.token } });
-    if (r.status === 401) { this.token = null; this.onExpired && this.onExpired(); throw new Error("sesión vencida"); }
+    if (r.status === 401) {
+      if (!opt.retried && await this.fromLlavero()) return this.req(url, { ...opt, retried: true });
+      this.token = null; this.onExpired && this.onExpired(); throw new Error("sesión vencida");
+    }
     if (!r.ok) throw new Error("Drive " + r.status + ": " + (await r.text()).slice(0, 200));
     return r;
   },

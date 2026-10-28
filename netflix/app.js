@@ -676,6 +676,12 @@ addEventListener("pagehide", () => { if (C.length) flush(); });
 function warn(html) { $("warn").innerHTML = html; $("warn").style.display = html ? "block" : "none"; }
 function sessionCheck() {
   if (!C.length) return;
+  if (Drive.llavero()) {
+    // Renews silently 10 minutes before the token expires; warns only if the keeper does not answer.
+    if (Drive.minutesLeft() > 10) return warn("");
+    Drive.fromLlavero().then(ok => { if (!ok) warn(`El llavero no respondió. <button class="btn main" data-renew>Entrar con Google</button>`); });
+    return;
+  }
   const m = Drive.minutesLeft();
   if (!Drive.valid()) warn(`Tu sesión de Google venció. <button class="btn main" data-renew>Volver a entrar</button>`);
   else if (m <= 8) warn(`Tu sesión de Google vence en ${m} min. <button class="btn main" data-renew>Renovar ahora</button>`);
@@ -752,7 +758,17 @@ function boot() {
   if (!window.google || !google.accounts) { $("login").hidden = false; $("lmsg").textContent = "No cargó el inicio de sesión de Google. Revisa tu internet y recarga."; return; }
   Drive.onToken = start;
   Drive.onExpired = sessionCheck;
+  // Pairing link: #llavero=<base64 of {"u": web app URL, "k": key}>. Saved once, then removed from the address bar.
+  const m = location.hash.match(/llavero=([\w+/=-]+)/);
+  if (m) {
+    try { const l = JSON.parse(atob(m[1])); if (l.u && l.k) localStorage.setItem("llavero", JSON.stringify(l)); } catch (_) { /* bad link */ }
+    history.replaceState(null, "", location.pathname);
+  }
   if (Drive.init()) start();
+  else if (Drive.llavero()) {
+    $("view-hoy").innerHTML = "";
+    Drive.fromLlavero().then(ok => { if (!ok) { $("login").hidden = false; $("lmsg").textContent = "El llavero no respondió: entra con Google esta vez."; } });
+  }
   else {
     $("login").hidden = false;
     let email = null;
