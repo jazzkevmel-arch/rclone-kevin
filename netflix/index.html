@@ -272,6 +272,13 @@
     .tile { flex-basis: 64vw; }
     .eps .vrowi { grid-template-columns: 30px 110px minmax(0, 1fr); }
   }
+  /* search inside the videos */
+  .said { margin: 8px 4%; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .saidt { padding: 10px 12px 6px; }
+  .saidr { display: flex; gap: 10px; width: 100%; text-align: left; background: none; border: 0; border-top: 1px solid var(--line); color: inherit; padding: 8px 12px; cursor: pointer; font-size: 14px; line-height: 1.45; }
+  .saidr:hover { background: var(--panel2); }
+  .saidr .tm { color: var(--accent); font-weight: 700; white-space: nowrap; }
+  .saidr mark { background: rgba(46,204,160,.3); color: inherit; border-radius: 3px; padding: 0 2px; }
   /* activities index */
   .tipos { flex-basis: 100%; display: flex; gap: 8px; flex-wrap: wrap; }
   .anext { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 4px 0 4px; margin: 14px 0; }
@@ -421,8 +428,8 @@
 
 <script src="https://accounts.google.com/gsi/client"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.17/hls.min.js"></script>
-<script src="drive.js?v=10"></script>
-<script src="zoom.js?v=10"></script>
-<script src="app.js?v=10"></script>
+<script src="drive.js?v=11"></script>
+<script src="zoom.js?v=11"></script>
+<script src="app.js?v=11"></script>
 </body>
 </html>

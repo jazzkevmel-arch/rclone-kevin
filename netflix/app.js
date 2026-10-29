@@ -341,7 +341,9 @@ function renderExp() {
     <input class="search" data-search="exp" placeholder="Buscar video o curso..." value="${esc(q)}"></div>`;
   if (q) {
     const hits = all().filter(x => show(x.c, expFilt) && match(x.c, x.v)).slice(0, 60);
-    html += hits.length ? row(`Resultados para «${q}»`, hits) : '<p class="small" style="margin:0 4%">Nada con esa búsqueda.</p>';
+    html += hits.length ? row(`Videos y cursos con «${q}»`, hits) : "";
+    html += `<div id="saidres">${saidHtml()}</div>`;
+    if (!SAID.idx) loadSaid();
   } else {
     let lastCat = "";
     C.forEach((c, ci) => {
@@ -367,6 +369,57 @@ function actCard(c, ci, v, vi) {
       <div class="at">${esc(v.a)}</div>
       <div class="small">Entregas: ${esc(entrega(c, v).txt)}</div></div>
     <button class="btn" data-open="${ci},${vi}">▶ Ir</button></div>`;
+}
+// ---------- search inside the videos ----------
+// buscador.json (made by indice_busqueda.py from the subtitles): { <video key>: [[second, phrase], ...] }.
+// Loaded the first time the user searches; results open the video at that minute.
+const SAID = { idx: null, loading: false };
+const fold = s => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+async function loadSaid() {
+  if (SAID.loading) return;
+  SAID.loading = true;
+  try {
+    const f = await Drive.find(ids.folder, "buscador.json");
+    SAID.idx = f ? JSON.parse(await Drive.read(f.id)) : {};
+    SAID.fold = {};
+    for (const k in SAID.idx) SAID.fold[k] = SAID.idx[k].map(([, t]) => fold(t));
+  } catch (_) { SAID.idx = {}; }
+  SAID.loading = false;
+  const box = $("saidres"); if (box && q) box.innerHTML = saidHtml();
+}
+function saidHtml() {
+  const words = fold(q).split(/\s+/).filter(w => w.length > 1);
+  if (!words.length || q.length < 3) return "";
+  if (!SAID.idx) return `<p class="small" style="margin:14px 4%">Buscando también en lo que dicen los videos...</p>`;
+  const res = [];
+  for (const k in SAID.idx) {
+    const x = IDX.get(k); if (!x || !show(x.c, expFilt)) continue;
+    const ph = SAID.idx[k], fl = SAID.fold[k];
+    for (let i = 0; i < ph.length; i++) {
+      // A phrase plus the next one, so words said across two phrases are found too.
+      const hay = fl[i] + " " + (fl[i + 1] || "");
+      if (words.every(w => hay.includes(w))) { res.push({ x, t: ph[i][0], txt: ph[i][1] + " " + (ph[i + 1] ? ph[i + 1][1] : "") }); i++; }
+    }
+  }
+  if (!res.length) return `<p class="small" style="margin:14px 4%">Ningún video dice «${esc(q)}».</p>`;
+  // Group by video, most mentions first.
+  const by = new Map();
+  res.forEach(r => { const k = K(r.x.v); if (!by.has(k)) by.set(k, []); by.get(k).push(r); });
+  const groups = [...by.values()].sort((a, b) => b.length - a.length).slice(0, 25);
+  const mark = txt => {
+    const f = fold(txt), at = Math.max(0, Math.min(...words.map(w => f.indexOf(w)).filter(i => i >= 0)) - 60);
+    let s = esc((at ? "…" : "") + txt.slice(at, at + 220) + (txt.length > at + 220 ? "…" : ""));
+    for (const w of words) {
+      const re = new RegExp(w.split("").map(ch => ch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "[\u0300-\u036f]?").join(""), "gi");
+      s = s.normalize("NFD").replace(re, m => `<mark>${m}</mark>`).normalize("NFC");
+    }
+    return s;
+  };
+  return `<div class="sec-h" style="margin:22px 4% 8px">Lo que dicen los videos <span class="small">${res.length} momentos en ${by.size} videos</span></div>` +
+    groups.map(g => `<div class="said"><div class="saidt">${esc(g[0].x.c.title)} · <b>${g[0].x.v.n}. ${esc(g[0].x.v.t)}</b>
+      <span class="small">${g.length} ${g.length === 1 ? "vez" : "veces"}</span></div>` +
+      g.slice(0, 4).map(r => `<button class="saidr" data-jump="${r.x.ci},${r.x.vi},${r.t}"><span class="tm">▶ ${mm(r.t)}</span><span>${mark(r.txt)}</span></button>`).join("") +
+      (g.length > 4 ? `<div class="small" style="padding:4px 10px">y ${g.length - 4} más en este video</div>` : "") + "</div>").join("");
 }
 function renderActs() {
   const f = [["ruta", "Mi ruta"], ...CATS.filter(c => C.some(x => x.cat === c)).map(c => [c, c]), ["todo", "Todo"]];
@@ -563,7 +616,7 @@ function setSource(vid, v) {
     hls.loadSource(url); hls.attachMedia(vid);
   } else vid.src = url;
 }
-async function openVid(ci, vi) {
+async function openVid(ci, vi, at) {
   const c = C[ci], v = c.videos[vi], vid = $("video"), web = isWeb(c, v);
   cur = { ci, vi };
   $("expmenu").hidden = true;
@@ -593,7 +646,8 @@ async function openVid(ci, vi) {
   loadSubs(c, v);
   vid.onloadedmetadata = () => {
     $("vwait").style.display = "none";
-    if (st.pos > 5 && st.pos < vid.duration - 15) vid.currentTime = st.pos;
+    if (at !== undefined) vid.currentTime = Math.max(0, at - 2);
+    else if (st.pos > 5 && st.pos < vid.duration - 15) vid.currentTime = st.pos;
     vid.play().catch(() => {});
     Zoom.showBar();
   };
@@ -666,6 +720,8 @@ document.addEventListener("click", e => {
   const f = t.closest("[data-filt]");
   if (f) { filt = f.dataset.filt; return render(); }
   if (t.closest("[data-pend]")) { soloPend = !soloPend; return render(); }
+  const jp = t.closest("[data-jump]");
+  if (jp) { const [ci, vi, at] = jp.dataset.jump.split(",").map(Number); return openVid(ci, vi, at); }
   const tp = t.closest("[data-tipo]");
   if (tp) { tipoF = tp.dataset.tipo; return render(); }
   const ia = t.closest(".aidx a");
