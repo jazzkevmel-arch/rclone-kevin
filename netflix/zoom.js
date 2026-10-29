@@ -196,14 +196,47 @@ const Zoom = (() => {
   vid.addEventListener("timeupdate", showCue);
   vid.addEventListener("seeked", showCue);
   const sec = s => { const p = s.trim().split(":").map(parseFloat); return p.reduce((acc, x) => acc * 60 + x, 0); };
+  // Whisper sometimes makes one huge block (a whole paragraph) or keeps a line on screen through a long
+  // silence. Split blocks into pieces of at most 2 lines (about 84 letters), timed by length, drop
+  // repeated lines, and hide a piece once it has been on screen long enough to read it.
+  const MAXC = 84;
+  function pieces(t) {
+    if (t.length <= MAXC) return [t];
+    const out = []; let cur = "";
+    for (const w of t.split(" ")) {
+      if (cur && (cur + " " + w).length > MAXC) { out.push(cur); cur = w; }
+      else cur = cur ? cur + " " + w : w;
+      // Prefer to cut after a sentence or a comma once the piece is long enough.
+      if (cur.length >= 45 && /[.,;:?!]$/.test(w)) { out.push(cur); cur = ""; }
+    }
+    if (cur) out.push(cur);
+    return out;
+  }
+  function tidy(list) {
+    const out = [];
+    for (const c of list) {
+      const prev = out[out.length - 1];
+      if (prev && prev.t === c.t) { prev.b = Math.min(Math.max(prev.b, c.b), prev.a + 2 + c.t.length * 0.09); continue; }
+      const ps = pieces(c.t), total = ps.reduce((n, x) => n + x.length, 0);
+      let at = c.a;
+      for (const x of ps) {
+        const end = at + (c.b - c.a) * x.length / total;
+        out.push({ a: at, b: Math.min(end, at + 2 + x.length * 0.09), t: x });
+        at = end;
+      }
+    }
+    return out;
+  }
   function setSubs(text) {
     cues = [];
     for (const block of (text || "").replace(/\r/g, "").split(/\n\n+/)) {
       const lines = block.split("\n"), i = lines.findIndex(l => l.includes("-->"));
       if (i < 0) continue;
       const [a, b] = lines[i].split("-->");
-      cues.push({ a: sec(a), b: sec(b.split(" ").filter(Boolean)[0]), t: lines.slice(i + 1).join("\n") });
+      const t = lines.slice(i + 1).join(" ").replace(/\s+/g, " ").trim();
+      if (t) cues.push({ a: sec(a), b: sec(b.split(" ").filter(Boolean)[0]), t });
     }
+    cues = tidy(cues);
     lastCue = undefined; styleSubs();
   }
   styleSubs();
