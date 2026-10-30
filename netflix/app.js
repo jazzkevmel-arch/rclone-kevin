@@ -583,13 +583,29 @@ async function loadQuiz() {
     if (f) QZ = { cursos: {}, videos: {}, tarjetas: {}, ...JSON.parse(await Drive.read(f.id)) };
   } catch (_) { /* no quizzes: the app works the same */ }
 }
+// Phone photos weigh 3 to 5 MB. Before uploading, an image is resized to at most 1600 px on its longest
+// side and saved as WebP (JPEG where WebP is not available): about 150 to 300 KB, text still readable.
+async function shrink(f) {
+  if (!f.type.startsWith("image/") || f.type === "image/gif" || f.size < 300 * 1024) return f;
+  try {
+    const img = await createImageBitmap(f);
+    const k = Math.min(1, 1600 / Math.max(img.width, img.height));
+    const cv = document.createElement("canvas");
+    cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k);
+    cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
+    let b = await new Promise(r => cv.toBlob(r, "image/webp", 0.85));
+    if (!b || b.type !== "image/webp") b = await new Promise(r => cv.toBlob(r, "image/jpeg", 0.85));
+    return b && b.size < f.size ? b : f;
+  } catch (_) { return f; }
+}
 async function addEvidence(files) {
   if (!cur) return;
   const c = C[cur.ci], v = curV(), st = V(v);
   $("pevmsg").textContent = "Subiendo...";
   try {
     if (!ids.ev) ids.ev = await Drive.folder(ids.folder, "evidencias");
-    for (const f of files) {
+    for (let f of files) {
+      f = await shrink(f);
       const ext = (f.type.split("/")[1] || "png").replace("jpeg", "jpg");
       const name = `${c.title} - ${v.n}. ${v.t}`.replace(/[\\/:*?"<>|]/g, "-").slice(0, 120) + " - " + localIso().replace(/:/g, "-") + "." + ext;
       const r = await Drive.upload(ids.ev, name, f);
