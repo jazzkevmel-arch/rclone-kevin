@@ -45,9 +45,9 @@ body { margin:0; background:var(--bg); color:var(--tx); font-family: Roboto, "Se
 /* rows */
 .rows { position:absolute; top:52vh; left:0; right:0; bottom:0; overflow:hidden; }
 .rowsin { transition: transform .3s ease; will-change: transform; }
-.row { padding: 0 0 1.6rem; }
+.row { padding: 0 0 .6rem; }
 .row h3 { margin:0 3.5rem .6rem; font-size:1.25rem; font-weight:700; }
-.trk { display:flex; gap:.9rem; padding:.7rem 3.5rem; transition: transform .3s ease; will-change: transform; }
+.trk { display:flex; gap:.9rem; padding:1.2rem 3.5rem; transition: transform .3s ease; will-change: transform; }
 
 /* tiles */
 .t { flex:0 0 16.5rem; border-radius:.5rem; transition: transform .18s ease, box-shadow .18s; transform-origin:center; }
@@ -60,9 +60,9 @@ body { margin:0; background:var(--bg); color:var(--tx); font-family: Roboto, "Se
 .t .ok { position:absolute; right:.6rem; bottom:.5rem; font-size:.7rem; font-weight:800; color:var(--acc); }
 .t .pb { position:absolute; left:0; right:0; bottom:0; height:.28rem; background:#ffffff30; }
 .t .pb i { display:block; height:100%; background:var(--acc); }
-.t.course { flex-basis:13rem; }
-.t.course .a { aspect-ratio:2/3; background: linear-gradient(170deg, hsl(var(--h) 65% 40%), hsl(calc(var(--h) + 40) 55% 14%) 75%); padding:1rem; }
-.t.course .tt { font-size:1.2rem; -webkit-line-clamp:5; }
+.t.course { flex-basis:16.5rem; }
+.t.course .a { background: linear-gradient(160deg, hsl(var(--h) 65% 40%), hsl(calc(var(--h) + 40) 55% 14%) 80%); }
+.t.course .tt { font-size:1.15rem; -webkit-line-clamp:2; }
 .t.course .n { font-size:.8rem; color:#ffffffb0; margin-top:.4rem; }
 .t.on { transform: scale(1.12); z-index:2; position:relative; box-shadow: 0 0 0 .2rem var(--ring), 0 1rem 2rem #000c; }
 
@@ -171,6 +171,6 @@ body { margin:0; background:var(--bg); color:var(--tx); font-family: Roboto, "Se
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="../drive.js?v=5"></script>
-<script src="tv.js?v=1"></script>
+<script src="tv.js?v=2"></script>
 </body>
 </html>

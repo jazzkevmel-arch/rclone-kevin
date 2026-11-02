@@ -195,6 +195,9 @@ function tab(t) {
   if (t === "search") { show("search"); renderSearch(); return focusLine("k0", 0); }
   homeMode = t; mem = { tabs: mem.tabs };
   show("home"); renderHome();
+  lines = scanLines();
+  const first = document.querySelector("#rowsin .f");
+  if (first) heroFor(first);
   focusLine(lines.length > 1 ? lines[1].id : "tabs", 0);
 }
 function tileHtml(x, cls = "") {
@@ -348,7 +351,7 @@ document.addEventListener("click", e => {   // mouse or touch (TV browsers with 
 });
 
 // ---------- playback ----------
-let playing = null, lastTick = null, nextX = null, nextT = null;
+let playing = null, lastTick = null, nextX = null, nextT = null, nextBack = null;
 async function subUrl(c, v) {
   try {
     ids.subs ??= (await Drive.find(ids.folder, "subtitulos", true)) || null;
@@ -409,6 +412,7 @@ function refresh() {
 function offerNext(x) {
   const n = all().find(y => y.ci === x.ci && y.vi > x.vi);
   if (!n) return toast("✔ Terminaste el curso", 4000);
+  const l = lines[li]; nextBack = l ? { id: l.id, idx: mem[l.id] || 0 } : { id: "tabs", idx: 0 };
   nextX = n; let s = 8;
   $("nut").textContent = `${n.v.n}. ${n.v.t}`;
   $("nul").textContent = `Siguiente episodio en ${s}`;
@@ -418,7 +422,7 @@ function offerNext(x) {
 function hideNext() {
   clearInterval(nextT); nextT = null;
   if ($("nextup").hidden) return;
-  $("nextup").hidden = true; nextX = null; focusAt(li);
+  $("nextup").hidden = true; nextX = null; focusLine(nextBack.id, nextBack.idx);
 }
 function playNext() { const n = nextX; hideNext(); if (n) play(n); }
 
