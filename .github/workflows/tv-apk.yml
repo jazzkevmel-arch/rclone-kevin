@@ -1,0 +1,50 @@
+# Builds the Android TV app (tv-app/) and publishes it as the release "tv-latest".
+# The download page netflix/tv/apk.html (and the short page /tv/) link to that release.
+name: TV app
+
+on:
+  push:
+    branches: [main]
+    paths: ["tv-app/**", ".github/workflows/tv-apk.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+      - name: Signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.TV_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/tv.jks"
+            echo "KEYSTORE_FILE=$RUNNER_TEMP/tv.jks" >> "$GITHUB_ENV"
+          fi
+      - name: Build
+        working-directory: tv-app
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.TV_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: netflixplc
+        run: gradle --no-daemon assembleRelease
+      # Without the signing key (secrets not set yet) the build is only a compile check: nothing is published,
+      # because an app signed with a throwaway key could not be updated later.
+      - name: Publish release
+        if: env.KEYSTORE_FILE != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp tv-app/app/build/outputs/apk/release/app-release.apk NetflixPLC-TV.apk
+          gh release view tv-latest >/dev/null 2>&1 || gh release create tv-latest --title "Netflix PLC TV" --notes "App para Android TV, Google TV y Fire TV. Se instala con la app Downloader."
+          gh release upload tv-latest NetflixPLC-TV.apk --clobber
+          gh release edit tv-latest --notes "App para Android TV, Google TV y Fire TV. Versión 1.${GITHUB_RUN_NUMBER}. Se instala con la app Downloader."

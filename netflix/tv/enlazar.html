@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Enlazar televisor</title>
+<link rel="icon" href="../icono.svg">
+<style>
+:root { --bg:#0b0d12; --tx:#f2f4f8; --mut:#a3aab8; --acc:#2ee6c5; }
+body { margin:0; background:var(--bg); color:var(--tx); font-family: system-ui, sans-serif; display:grid; place-items:center; min-height:100vh; padding:16px; box-sizing:border-box; text-align:center; }
+main { max-width:420px; }
+h1 { font-size:26px; margin:8px 0 12px; }
+p { color:var(--mut); line-height:1.5; font-size:16px; }
+.logo { font-weight:900; color:var(--acc); letter-spacing:.06em; }
+.logo b { color:var(--tx); font-weight:300; }
+button { font:inherit; font-size:18px; font-weight:700; padding:14px 28px; border:0; border-radius:8px; background:var(--tx); color:#000; margin-top:12px; width:100%; }
+button:disabled { opacity:.5; }
+.ok { color:var(--acc); font-weight:700; }
+</style>
+</head>
+<body>
+<main>
+  <div class="logo">NETFLIX <b>PLC</b></div>
+  <h1>Enlazar televisor</h1>
+  <p id="msg">Este celular le dará acceso a tus cursos al televisor que muestra el código. Hazlo solo con tu propio televisor.</p>
+  <p id="code"></p>
+  <button id="go" hidden>Enlazar televisor</button>
+</main>
+<script>
+// Phone side of the TV pairing: sends { k, aprobar: code } to the user's llavero (see tv.js and llavero/Codigo.gs).
+const code = location.hash.slice(1);
+const msg = document.getElementById("msg"), go = document.getElementById("go");
+let l = null;
+try { l = JSON.parse(localStorage.getItem("llavero") || "null"); } catch (_) { /* storage blocked */ }
+if (!/^[a-z0-9]{32}$/.test(code)) msg.textContent = "El código no es válido. Vuelve a escanear el QR del televisor.";
+else if (!l || !l.u || !l.k) msg.innerHTML = "Este navegador todavía no tiene tu llavero. Abre una vez tu enlace del llavero (archivo <b>enlace_llavero.txt</b> en Mi unidad/Estudio/Netflix_PLC) en este mismo navegador y vuelve a escanear el QR.";
+else {
+  document.getElementById("code").textContent = "Código del televisor: " + code.slice(0, 4).toUpperCase() + "-" + code.slice(4, 8).toUpperCase();
+  go.hidden = false;
+  go.onclick = async () => {
+    go.disabled = true; go.textContent = "Enlazando...";
+    try {
+      const r = await fetch(l.u, { method: "POST", headers: { "Content-Type": "text/plain" }, body: JSON.stringify({ k: l.k, aprobar: code }) });
+      const d = await r.json();
+      if (d.ok) { msg.innerHTML = '<span class="ok">✔ Listo.</span> En unos segundos el televisor abre tus cursos. Ya puedes cerrar esta página.'; go.hidden = true; return; }
+      msg.textContent = d.error === "clave incorrecta" ? "Tu llavero cambió de clave: abre el enlace nuevo del llavero en este celular." : "El llavero todavía no sabe enlazar televisores (falta actualizar su código).";
+    } catch (_) { msg.textContent = "No hubo conexión con el llavero. Revisa el internet y vuelve a intentar."; }
+    go.disabled = false; go.textContent = "Enlazar televisor";
+  };
+}
+</script>
+</body>
+</html>
