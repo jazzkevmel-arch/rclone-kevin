@@ -25,23 +25,24 @@ const short = t => t.replace(/\s*\(.*?\)\s*/g, " ").trim();
 const mins = s => Math.max(1, Math.round(s / 60)) + " min";
 
 let C = [], CATS = [], S = { videos: {}, ultimo: null, uu: 0, md: {} }, ids = {}, IDX = new Map();
-const V = v => (S.videos[K(v)] ||= { pos: 0, dur: 0, visto: false, act: false, nota: "", u: 0 });
+const V = v => S.videos[K(v)] || (S.videos[K(v)] = { pos: 0, dur: 0, visto: false, act: false, nota: "", u: 0 });
+const sub = (o, k) => o[k] || (o[k] = {});
 const touch = v => { V(v).u = Date.now(); };
 // Only what plays on the TV: Drive videos (d) and Control Más+ lessons with their stream (b).
 const playable = v => !!(v.d || v.b);
-const all = () => C.flatMap((c, ci) => c.videos.map((v, vi) => ({ c, ci, v, vi }))).filter(x => playable(x.v));
+const all = () => [].concat(...C.map((c, ci) => c.videos.map((v, vi) => ({ c, ci, v, vi })))).filter(x => playable(x.v));
 const pct = v => { const st = V(v); return st.visto ? 100 : st.dur ? Math.min(100, st.pos / st.dur * 100) : 0; };
 
 // ---------- minutes and sync (same rules as ../app.js) ----------
 function addMin(cat, m) {
-  const d = today(), md = (S.md[DEV] ||= {}), day = (md[d] ||= {});
+  const d = today(), day = sub(sub(S.md, DEV), d);
   day[cat] = (day[cat] || 0) + m;
 }
 function totals() {
   const dias = {}, diasCat = {};
   for (const days of Object.values(S.md)) for (const [d, cats] of Object.entries(days)) for (const [c, m] of Object.entries(cats)) {
     dias[d] = (dias[d] || 0) + m;
-    (diasCat[d] ||= {})[c] = ((diasCat[d] || {})[c] || 0) + m;
+    sub(diasCat, d)[c] = (diasCat[d][c] || 0) + m;
   }
   return { dias, diasCat };
 }
@@ -62,9 +63,9 @@ function merge(r) {
   }
   for (const [dev, days] of Object.entries(r.md || {})) {
     if (dev !== DEV) { S.md[dev] = days; continue; }
-    const mine = (S.md[DEV] ||= {});
+    const mine = sub(S.md, DEV);
     for (const [d, cats] of Object.entries(days)) for (const [c, m] of Object.entries(cats)) {
-      const day = (mine[d] ||= {});
+      const day = sub(mine, d);
       day[c] = Math.max(day[c] || 0, m);
     }
   }
@@ -354,7 +355,7 @@ document.addEventListener("click", e => {   // mouse or touch (TV browsers with 
 let playing = null, lastTick = null, nextX = null, nextT = null, nextBack = null;
 async function subUrl(c, v) {
   try {
-    ids.subs ??= (await Drive.find(ids.folder, "subtitulos", true)) || null;
+    if (ids.subs === undefined) ids.subs = (await Drive.find(ids.folder, "subtitulos", true)) || null;
     if (!ids.subs) return "";
     const d = await Drive.find(ids.subs.id, c.id, true);
     if (!d) return "";
