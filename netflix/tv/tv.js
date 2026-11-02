@@ -7,7 +7,7 @@
 // by scanning a QR code with the phone. The web app URL below is not secret: without the key it gives nothing.
 const LLAVERO_URL = "https://script.google.com/macros/s/AKfycbx-7bEIOzLJk61_ASIheRzdZLOZJO_IcDMMPFve-FoGjMXbCfkTHvrEhX3TP1O3S5MbXA/exec";
 const PAIR_PAGE = "https://jazzkevmel-arch.github.io/rclone-kevin/netflix/tv/enlazar.html#";
-const API = "https://www.googleapis.com/drive/v3/files/";
+const FILES_API = "https://www.googleapis.com/drive/v3/files/";
 const BUNNY = "https://vz-8115f9c6-089.b-cdn.net/";
 const NATIVE = !!(window.Android && window.Android.play);
 
@@ -360,10 +360,10 @@ async function subUrl(c, v) {
     const d = await Drive.find(ids.subs.id, c.id, true);
     if (!d) return "";
     const f = await Drive.find(d.id, String(v.n).padStart(2, "0") + ".vtt");
-    return f ? API + f.id + "?alt=media" : "";
+    return f ? FILES_API + f.id + "?alt=media" : "";
   } catch (_) { return ""; }
 }
-const srcOf = v => v.b ? BUNNY + v.b + "/playlist.m3u8" : API + v.d + "?alt=media&supportsAllDrives=true";
+const srcOf = v => v.b ? BUNNY + v.b + "/playlist.m3u8" : FILES_API + v.d + "?alt=media&supportsAllDrives=true";
 async function play(x, fromZero) {
   hideNext();
   toast("Abriendo...");
