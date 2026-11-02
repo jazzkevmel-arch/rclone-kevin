@@ -80,6 +80,8 @@ const Drive = {
   async req(url, opt = {}) {
     if (!this.valid() && !(await this.fromLlavero())) { this.onExpired && this.onExpired(); throw new Error("sesión vencida"); }
     const r = await fetch(url, { ...opt, headers: { ...(opt.headers || {}), Authorization: "Bearer " + this.token } });
+    // 403 can mean the saved token lacks a permission the llavero now grants (it was read-only until 1/11/2026).
+    if (r.status === 403 && !opt.retried && this.llavero() && await this.fromLlavero()) return this.req(url, { ...opt, retried: true });
     if (r.status === 401) {
       if (!opt.retried && await this.fromLlavero()) return this.req(url, { ...opt, retried: true });
       this.token = null; this.onExpired && this.onExpired(); throw new Error("sesión vencida");
