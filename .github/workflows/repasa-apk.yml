@@ -1,0 +1,50 @@
+# Builds the Repasa Android app (repasa-app/, a Trusted Web Activity) and publishes it as the release "repasa-latest".
+# Uses the same signing key as the TV app. The log prints the key's SHA-256 for assetlinks.json.
+name: Repasa app
+
+on:
+  push:
+    branches: [main]
+    paths: ["repasa-app/**", ".github/workflows/repasa-apk.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+      - name: Signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.TV_KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.TV_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/tv.jks"
+            echo "KEYSTORE_FILE=$RUNNER_TEMP/tv.jks" >> "$GITHUB_ENV"
+            keytool -list -v -keystore "$RUNNER_TEMP/tv.jks" -alias netflixplc -storepass "$KEYSTORE_PASSWORD" | grep "SHA256:"
+          fi
+      - name: Build
+        working-directory: repasa-app
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.TV_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: netflixplc
+        run: gradle --no-daemon assembleRelease
+      - name: Publish release
+        if: env.KEYSTORE_FILE != '' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp repasa-app/app/build/outputs/apk/release/app-release.apk Repasa.apk
+          gh release view repasa-latest >/dev/null 2>&1 || gh release create repasa-latest --title "Repasa" --notes "App de estudio para Android."
+          gh release upload repasa-latest Repasa.apk --clobber
+          gh release edit repasa-latest --notes "Repasa para Android. Versión 1.${GITHUB_RUN_NUMBER}. Descarga Repasa.apk en el celular y ábrelo para instalar."
