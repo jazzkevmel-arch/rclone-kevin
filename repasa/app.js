@@ -537,7 +537,7 @@ function viewAjustes() {
     <div class="row" style="margin-top:10px"><button class="btn primary grow" id="gsave">Guardar y probar</button>${IA.key ? `<button class="btn ghost" id="gdel">Quitar</button>` : ""}</div></div>
     <div class="card section"><h3>Tus datos</h3><p class="muted small">Todo se guarda en tu Drive: <b>Mi unidad/Estudio/Repasa</b>. Los títulos de los cursos salen de Netflix PLC.${email ? "<br>Cuenta: " + esc(email) : ""}</p>
     <button class="btn block" id="fsync">Sincronizar ahora</button></div>
-    <p class="muted small" style="text-align:center">Repasa · versión 2</p>`;
+    <p class="muted small" style="text-align:center">Repasa · versión 3</p>`;
   $("gsave").onclick = async () => {
     const k = $("gk").value.trim(); if (!k) return toast("Pega tu clave primero.");
     $("gsave").disabled = true; $("gsave").textContent = "Probando…";
