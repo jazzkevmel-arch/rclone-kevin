@@ -3,35 +3,67 @@
 const GEMINI = "https://generativelanguage.googleapis.com/v1beta/";
 
 const IA = {
-  key: "", model: "",
+  key: "", model: "", models: null,
 
-  // Picks the newest stable "gemini-X.Y-flash" model this key can use. Falls back to a known name.
-  async pickModel() {
+  // Flash models this key can use, best first: stable "gemini-X.Y-flash", then "-flash-lite", newest version first.
+  // When one is overloaded (503) or out of free quota (429), call() moves on to the next.
+  async listModels() {
+    const fallback = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash"];
     try {
       const r = await fetch(GEMINI + "models?pageSize=200&key=" + encodeURIComponent(this.key));
-      if (!r.ok) return "gemini-2.5-flash";
+      if (!r.ok) return fallback;
       const names = ((await r.json()).models || [])
         .filter(m => (m.supportedGenerationMethods || []).indexOf("generateContent") >= 0)
         .map(m => m.name.replace("models/", ""))
-        .filter(n => /^gemini-\d+(\.\d+)?-flash$/.test(n));
-      names.sort((a, b) => parseFloat(b.split("-")[1]) - parseFloat(a.split("-")[1]));
-      return names[0] || "gemini-2.5-flash";
-    } catch (_) { return "gemini-2.5-flash"; }
+        .filter(n => /^gemini-\d+(\.\d+)?-flash(-lite)?$/.test(n));
+      const ver = n => parseFloat(n.split("-")[1]);
+      names.sort((a, b) => (/-lite$/.test(a) - /-lite$/.test(b)) || ver(b) - ver(a));
+      return names.length ? names : fallback;
+    } catch (_) { return fallback; }
+  },
+  async pickModel() { this.models = await this.listModels(); return this.models[0]; },
+
+  // Kinds of failure: "key" (bad key: stop), "busy" (try again or another model), "other".
+  async callOnce(model, body) {
+    const r = await fetch(GEMINI + "models/" + model + ":generateContent?key=" + encodeURIComponent(this.key), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+    if (r.ok) return { d: await r.json() };
+    const t = await r.text();
+    if ((r.status === 400 || r.status === 403) && /API key|API_KEY|PERMISSION_DENIED/i.test(t)) return { err: "key", status: r.status };
+    if (r.status === 429 || r.status === 503 || r.status === 500 || r.status === 404) return { err: "busy", status: r.status };
+    return { err: "other", status: r.status, text: t };
   },
 
   async call(body) {
     if (!this.key) throw new Error("Falta tu clave de Gemini. Ve a Ajustes.");
-    const r = await fetch(GEMINI + "models/" + this.model + ":generateContent?key=" + encodeURIComponent(this.key), {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
-    });
-    if (r.status === 429) throw new Error("Llegaste al límite gratis de Gemini por ahora. Prueba en un rato.");
-    if (r.status === 400 || r.status === 403) {
-      const t = await r.text();
-      if (/API key|API_KEY/i.test(t)) throw new Error("La clave de Gemini no funciona. Revísala en Ajustes.");
-      throw new Error("Gemini " + r.status + ": " + t.slice(0, 160));
+    const order = [this.model].concat((this.models || []).filter(m => m !== this.model));
+    let last = null, triedList = !!this.models;
+    for (let i = 0; i < order.length; i++) {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const res = await this.callOnce(order[i], body);
+        if (res.d) {
+          if (order[i] !== this.model) { this.model = order[i]; this.onModel && this.onModel(order[i]); }
+          return this.text(res.d);
+        }
+        last = res;
+        if (res.err === "key") throw new Error("La clave de Gemini no funciona. Revísala en Ajustes.");
+        if (res.err === "other") throw new Error("Gemini " + res.status + ": " + (res.text || "").slice(0, 160));
+        if (res.status === 404 || res.status === 429) break; // that model is gone or out of quota: next one
+        await new Promise(ok => setTimeout(ok, 1500 * (attempt + 1)));
+      }
+      if (i === order.length - 1 && !triedList) { // first failure on the saved model: learn the other models
+        triedList = true;
+        this.models = await this.listModels();
+        order.push.apply(order, this.models.filter(m => order.indexOf(m) < 0));
+      }
     }
-    if (!r.ok) throw new Error("Gemini " + r.status + ": " + (await r.text()).slice(0, 160));
-    const d = await r.json();
+    throw new Error(last && last.status === 429
+      ? "Llegaste al límite gratis de Gemini por hoy en todos los modelos. Prueba más tarde."
+      : "Gemini está saturado ahora mismo. Prueba en unos minutos.");
+  },
+
+  text(d) {
     const c = d.candidates && d.candidates[0];
     const text = c && c.content && c.content.parts ? c.content.parts.map(p => p.text || "").join("") : "";
     if (!text) throw new Error("Gemini no devolvió respuesta" + (c && c.finishReason ? " (" + c.finishReason + ")" : "") + ".");

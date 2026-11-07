@@ -537,15 +537,20 @@ function viewAjustes() {
     <div class="row" style="margin-top:10px"><button class="btn primary grow" id="gsave">Guardar y probar</button>${IA.key ? `<button class="btn ghost" id="gdel">Quitar</button>` : ""}</div></div>
     <div class="card section"><h3>Tus datos</h3><p class="muted small">Todo se guarda en tu Drive: <b>Mi unidad/Estudio/Repasa</b>. Los títulos de los cursos salen de Netflix PLC.${email ? "<br>Cuenta: " + esc(email) : ""}</p>
     <button class="btn block" id="fsync">Sincronizar ahora</button></div>
-    <p class="muted small" style="text-align:center">Repasa · versión 1</p>`;
+    <p class="muted small" style="text-align:center">Repasa · versión 2</p>`;
   $("gsave").onclick = async () => {
     const k = $("gk").value.trim(); if (!k) return toast("Pega tu clave primero.");
     $("gsave").disabled = true; $("gsave").textContent = "Probando…";
     IA.key = k; IA.model = await IA.pickModel();
+    let note = "Listo: Gemini conectado";
     try { await IA.call({ contents: [{ role: "user", parts: [{ text: "Responde solo: ok" }] }] }); }
-    catch (e) { IA.key = CFG.gemini || ""; IA.model = CFG.modelo || ""; toast(e.message, 4500); $("gsave").disabled = false; $("gsave").textContent = "Guardar y probar"; return; }
+    catch (e) {
+      // A bad key stops here. A busy or out-of-quota model still means the key is valid: save it.
+      if (/clave/i.test(e.message)) { IA.key = CFG.gemini || ""; IA.model = CFG.modelo || ""; toast(e.message, 4500); $("gsave").disabled = false; $("gsave").textContent = "Guardar y probar"; return; }
+      note = "Clave guardada. Gemini está ocupado ahora; Repasa reintenta solo cuando lo uses.";
+    }
     CFG.gemini = k; CFG.modelo = IA.model;
-    try { await Store.saveConfig(CFG); toast("Listo: Gemini conectado"); } catch (e) { toast("Funciona, pero no se guardó en Drive: " + e.message, 4500); }
+    try { await Store.saveConfig(CFG); toast(note, 4500); } catch (e) { toast("Funciona, pero no se guardó en Drive: " + e.message, 4500); }
     viewAjustes();
   };
   if ($("gdel")) $("gdel").onclick = async () => { CFG.gemini = ""; IA.key = ""; await Store.saveConfig(CFG); viewAjustes(); };
@@ -562,6 +567,8 @@ async function start() {
     const r = await Promise.all([Store.catalog(), Store.notebook(), Store.index(), Store.progress(), Store.config()]);
     CAT = r[0]; NB = r[1]; IDX = r[2]; P = r[3] ? merge(blank(), r[3]) : blank(); CFG = r[4] || {};
     IA.key = CFG.gemini || ""; IA.model = CFG.modelo || "gemini-2.5-flash";
+    // When Gemini had to switch to another model, remember the one that answered.
+    IA.onModel = m => { CFG.modelo = m; Store.saveConfig(CFG).catch(() => {}); };
     if (Drive.rememberEmail) Drive.rememberEmail();
     started = true; sync(""); route();
   } catch (e) {
