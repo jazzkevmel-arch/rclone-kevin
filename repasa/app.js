@@ -22,6 +22,7 @@ const ICON = {
   chat: '<svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12Z"/></svg>',
   cam: '<svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>',
   send: '<svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
+  mic: '<svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>',
   flame: '<svg viewBox="0 0 24 24"><path d="M12 3c1 4 5 5.5 5 10a5 5 0 0 1-10 0c0-2.5 1.5-3.5 2-5 .8 1.2 1.5 1.6 2.3 1.6C11 7.5 11 5 12 3Z"/></svg>',
   spark: '<svg viewBox="0 0 24 24"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6"/></svg>',
 };
@@ -133,6 +134,7 @@ function mastery(lk) {
   const L = P.lec[lk] || {}, parts = [];
   if (L.q != null) parts.push(L.q);
   if (L.t != null) parts.push(L.t);
+  if (L.o != null) parts.push(L.o);
   if (L.n) {
     let good = 0;
     for (let i = 0; i < L.n; i++) { const c = P.cards[lk + "#" + i]; if (c && c.g >= 4) good++; }
@@ -187,6 +189,7 @@ async function content(c, n, regen) {
 let started = false;
 function route() {
   if (!started) return;
+  if (window.Voz && Voz.s && !Voz.s.closed) Voz.stop();
   const parts = (location.hash.replace(/^#\/?/, "") || "hoy").split("/").map(decodeURIComponent);
   const tab = parts[0];
   document.body.classList.remove("full");
@@ -279,6 +282,7 @@ async function viewLeccion(cid, n, modo) {
   const lk = LK(cid, n);
   P.ult = { c: cid, n, u: Date.now() }; save();
   if (modo === "tutor") return viewTutor({ c, v });
+  if (modo === "oral") return viewOral({ c, v });
   V().innerHTML = `<div class="spin"></div><p class="empty" style="padding-top:0">Preparando tu lección…<br><span class="small">La primera vez la IA lee la clase (unos 20 s).</span></p>`;
   let d;
   try { d = await content(c, n); }
@@ -298,6 +302,7 @@ async function viewLeccion(cid, n, modo) {
       <a class="mode" href="${base}tarjetas"><div class="ic">${ICON.cards}</div><b>Tarjetas</b><span>${has("tarjetas") ? pl(d.tarjetas.length, "tarjeta", "tarjetas") : "Con IA" + need}</span></a>
       <a class="mode" href="${base}quiz"><div class="ic">${ICON.quiz}</div><b>Quiz</b><span>${has("quiz") ? pl(d.quiz.length, "pregunta", "preguntas") + (L.q != null ? " · mejor " + L.q + "%" : "") : "Con IA" + need}</span></a>
       <a class="mode" href="${base}vf"><div class="ic">${ICON.tf}</div><b>Verdadero o falso</b><span>${has("vf") ? pl(d.vf.length, "frase", "frases") + (L.t != null ? " · mejor " + L.t + "%" : "") : "Con IA" + need}</span></a>
+      <a class="mode wide oral-card" href="${base}oral"><div class="ic">${ICON.mic}</div><div class="grow"><b>Examen oral con el Profe Floro</b><br><span>Te pregunta en voz alta, te escucha y te roche. ${L.o != null ? "Mejor nota " + L.o + "%" : "Ponte audífonos."}</span></div>${ICON.chev}</a>
       <a class="mode wide" href="${base}tutor"><div class="ic">${ICON.chat}</div><div class="grow"><b>Pregúntale al tutor</b><br><span>Conoce esta clase. Puedes mandarle una foto.</span></div>${ICON.chev}</a>
     </div>
     ${d && d.fuente === "notebooklm" ? `<p class="muted small">Tarjetas y quiz de tu cuaderno de NotebookLM.</p>` : ""}
@@ -439,6 +444,79 @@ function viewFallos() {
   V().innerHTML = h;
 }
 
+// ---------- Oral exam (voice, Gemini Live) ----------
+const ORAL = () => Object.assign({ nivel: "pesado", voz: "Puck", n: 5 }, CFG.oral || {});
+const NIVELES = { tranqui: "Tranqui", pesado: "Pesado", sinfiltro: "Sin filtro" };
+
+function viewOral(ctx) {
+  const base = "#/leccion/" + encodeURIComponent(ctx.c.id) + "/" + ctx.v.n;
+  if (!IA.key) return needKey(ctx.c, ctx.v, "El examen oral");
+  const o = ORAL(), lk = LK(ctx.c.id, ctx.v.n);
+  document.body.classList.add("full");
+  V().innerHTML = `<div class="progress-top"><button class="icon-btn" onclick="go('${base}')">${ICON.x}</button><div class="grow small muted" style="text-align:center">Examen oral</div><span style="width:40px"></span></div>
+    <div class="oral">
+      <p class="muted small" style="margin:0">${esc(ctx.v.t)}</p>
+      <div class="orb-wrap"><div class="orb" id="orb"></div></div>
+      <p id="ost" class="ost">Profe Floro · ${NIVELES[o.nivel]} · ${o.n} preguntas</p>
+      <div id="cap" class="cap"></div>
+      <div id="oact"><button class="btn primary block" id="ostart">${ICON.mic} Empezar examen</button>
+      <p class="muted small" style="text-align:center">Usa audífonos para que el profe no se escuche a sí mismo. Cambia el nivel de roche en Ajustes.</p></div>
+    </div>`;
+  const orb = $("orb"), st = $("ost"), cap = $("cap");
+  let who = null, line = null, ending = false;
+  const caption = (w, t) => {
+    if (w === "fin") { who = null; return; }
+    if (w !== who || !line) { who = w; line = document.createElement("p"); line.className = "cl " + w; cap.appendChild(line); }
+    line.textContent += t; cap.scrollTop = cap.scrollHeight;
+    while (cap.children.length > 6) cap.removeChild(cap.firstChild);
+  };
+  const label = { conectando: "Conectando con el profe…", hablando: "El profe está hablando…", escuchando: "Te escucha… responde en voz alta" };
+  const finish = (r, err) => {
+    orb.className = "orb"; orb.style.transform = "";
+    if (r && r.nota != null) {
+      const nota = Math.max(0, Math.min(100, Math.round(+r.nota)));
+      setLec(lk, "o", nota, true); act(3);
+      const fallos = (r.fallos || []).filter(Boolean);
+      V().querySelector(".oral").innerHTML = `<div class="result"><div class="big">${nota}%</div><h2>${nota >= 80 ? "Aprobado, causa" : nota >= 50 ? "Ahí nomás" : "Jalado, a repasar"}</h2>
+        <p class="muted">${esc(r.resumen || "")}</p>
+        ${fallos.length ? `<div class="card" style="text-align:left;margin:14px 0"><h3>Para repasar</h3><ul class="steps">${fallos.map(f => `<li>${esc(f)}</li>`).join("")}</ul></div>` : ""}
+        <p class="muted small">Dominio de la lección: ${mastery(lk)}%</p>
+        <div class="stack"><button class="btn primary block" onclick="route()">Otro examen</button><a class="btn block" href="${base}">Volver a la lección</a></div></div>`;
+    } else {
+      st.textContent = err ? "Se cortó: " + err : "Examen terminado sin nota.";
+      $("oact").innerHTML = `<button class="btn primary block" onclick="route()">Intentar de nuevo</button><a class="btn block" style="margin-top:10px" href="${base}">Volver a la lección</a>`;
+    }
+  };
+  $("ostart").onclick = async () => {
+    $("oact").innerHTML = `<div class="row" style="gap:10px"><button class="btn grow" id="omute">Silenciar mic</button><button class="btn grow" id="oend">Terminar</button></div>`;
+    try {
+      st.textContent = "Preparando la clase…";
+      const tr = (await Store.transcript(ctx.c.id, ctx.v.n)) || "";
+      if (!CFG.live) { CFG.live = await Voz.pickModel(IA.key); Store.saveConfig(CFG).catch(() => {}); }
+      await Voz.start({
+        key: IA.key, model: CFG.live, voice: o.voz,
+        system: Voz.persona(o.nivel) + Voz.rules(o.n, ctx.v.t, tr),
+        onState: s => { st.textContent = label[s] || s; orb.className = "orb " + s; },
+        onLevel: l => { orb.style.transform = "scale(" + (1 + l * 0.25).toFixed(3) + ")"; },
+        onCaption: caption,
+        onEnd: finish,
+      });
+    } catch (e) {
+      Voz.stop();
+      finish(null, /Permission|NotAllowed/i.test(e.name + e.message) ? "sin permiso de micrófono. Actívalo para Chrome en Ajustes del celular." : e.message);
+      return;
+    }
+    let muted = false;
+    $("omute").onclick = () => { muted = !muted; Voz.mute(muted); $("omute").textContent = muted ? "Activar mic" : "Silenciar mic"; };
+    $("oend").onclick = () => {
+      if (ending) { Voz.stop(); return finish(null, null); }
+      ending = true; $("oend").textContent = "Cerrar ya";
+      Voz.say("Quiero terminar el examen ahora. Dame tu veredicto y llama a terminar_examen con mi nota.");
+      setTimeout(() => { if (Voz.s && !Voz.s.closed) { Voz.stop(); finish(null, null); } }, 25000);
+    };
+  };
+}
+
 // ---------- Tutor ----------
 function md(s) {
   const lines = esc(s).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/`([^`]+)`/g, "<code>$1</code>").split(/\n/);
@@ -535,9 +613,15 @@ function viewAjustes() {
     <ol class="steps"><li>Abre <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener" style="color:var(--ac2)">aistudio.google.com/apikey</a> con tu cuenta de Google.</li><li>Toca <b>Create API key</b> y cópiala.</li><li>Pégala aquí y guarda. Se guarda solo en tu Drive.</li></ol>
     <label class="f" for="gk">Clave de Gemini</label><input class="in" id="gk" type="password" autocomplete="off" placeholder="${IA.key ? "•••••••• (guardada)" : "AIza…"}">
     <div class="row" style="margin-top:10px"><button class="btn primary grow" id="gsave">Guardar y probar</button>${IA.key ? `<button class="btn ghost" id="gdel">Quitar</button>` : ""}</div></div>
+    <div class="card section"><h3>Profe Floro (examen oral)</h3>
+    <p class="muted small">Cuánto te roche, con qué voz y cuántas preguntas te hace.${CFG.live ? " Modelo de voz: <b>" + esc(CFG.live) + "</b>" : ""}</p>
+    <label class="f" for="onv">Nivel de roche</label><select class="in" id="onv">${Object.keys(NIVELES).map(k => `<option value="${k}"${ORAL().nivel === k ? " selected" : ""}>${NIVELES[k]}${k === "sinfiltro" ? " (con lisuras)" : ""}</option>`).join("")}</select>
+    <div class="row" style="gap:8px;margin-top:10px"><div class="grow"><label class="f" for="ovz">Voz</label><select class="in" id="ovz">${["Puck", "Charon", "Fenrir", "Orus", "Kore", "Aoede", "Leda", "Zephyr"].map(x => `<option${ORAL().voz === x ? " selected" : ""}>${x}</option>`).join("")}</select></div>
+    <div class="grow"><label class="f" for="onq">Preguntas</label><select class="in" id="onq">${[3, 5, 8, 10].map(x => `<option${ORAL().n === x ? " selected" : ""}>${x}</option>`).join("")}</select></div></div>
+    <button class="btn block" id="osave" style="margin-top:10px">Guardar profe</button></div>
     <div class="card section"><h3>Tus datos</h3><p class="muted small">Todo se guarda en tu Drive: <b>Mi unidad/Estudio/Repasa</b>. Los títulos de los cursos salen de Netflix PLC.${email ? "<br>Cuenta: " + esc(email) : ""}</p>
     <button class="btn block" id="fsync">Sincronizar ahora</button></div>
-    <p class="muted small" style="text-align:center">Repasa · versión 3</p>`;
+    <p class="muted small" style="text-align:center">Repasa · versión 4</p>`;
   $("gsave").onclick = async () => {
     const k = $("gk").value.trim(); if (!k) return toast("Pega tu clave primero.");
     $("gsave").disabled = true; $("gsave").textContent = "Probando…";
@@ -555,6 +639,10 @@ function viewAjustes() {
   };
   if ($("gdel")) $("gdel").onclick = async () => { CFG.gemini = ""; IA.key = ""; await Store.saveConfig(CFG); viewAjustes(); };
   $("fsync").onclick = async () => { dirty = true; await flush(); toast("Sincronizado"); };
+  $("osave").onclick = async () => {
+    CFG.oral = { nivel: $("onv").value, voz: $("ovz").value, n: +$("onq").value };
+    try { await Store.saveConfig(CFG); toast("Profe guardado"); } catch (e) { toast("No se guardó: " + e.message, 4000); }
+  };
 }
 
 // ---------- Start ----------

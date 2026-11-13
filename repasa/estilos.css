@@ -185,3 +185,21 @@ body.full .view { padding-top: calc(12px + env(safe-area-inset-top)); padding-bo
 .tag { display: inline-block; padding: 3px 8px; border-radius: 6px; background: var(--bg3); font-size: 11px; color: var(--tx2); }
 .tag.ac { background: #2b2412; color: var(--ac2); }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* Oral exam */
+.oral { display: flex; flex-direction: column; gap: 14px; text-align: center; }
+.orb-wrap { display: grid; place-items: center; height: 240px; }
+.orb { width: 170px; height: 170px; border-radius: 50%; transition: transform .12s ease-out, box-shadow .3s;
+  background: radial-gradient(circle at 35% 30%, #fff3d1 0%, #f5c463 18%, #c98a1e 48%, #5a3a08 80%, #2a1a03 100%);
+  box-shadow: 0 0 40px rgba(245,165,36,.25), inset -12px -18px 40px rgba(0,0,0,.45); }
+.orb.hablando { box-shadow: 0 0 70px rgba(245,165,36,.55), inset -12px -18px 40px rgba(0,0,0,.35); }
+.orb.escuchando { background: radial-gradient(circle at 35% 30%, #e4f2ff 0%, #8cc2ff 18%, #3a78c9 48%, #10305a 80%, #061428 100%);
+  box-shadow: 0 0 60px rgba(106,168,255,.45), inset -12px -18px 40px rgba(0,0,0,.4); }
+.orb.conectando { animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .55; } }
+.ost { margin: 0; font-weight: 600; color: var(--tx2); min-height: 22px; }
+.cap { max-height: 180px; overflow-y: auto; text-align: left; }
+.cl { margin: 0 0 6px; font-size: 14px; line-height: 1.45; }
+.cl.profe { color: var(--ac2); }
+.cl.tu { color: var(--tx2); text-align: right; }
+.oral-card { border-color: #3b3220; background: linear-gradient(120deg, #2a2210, var(--bg2) 60%); }
