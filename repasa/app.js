@@ -35,11 +35,26 @@ const TUT = {};               // tutor chat history per context key
 let DEV = "web";
 try { DEV = localStorage.getItem("repasa_dev") || ("d" + Math.random().toString(36).slice(2, 8)); localStorage.setItem("repasa_dev", DEV); } catch (_) { /* storage blocked */ }
 
-const blank = () => ({ cards: {}, lec: {}, dias: {}, exam: {}, fallos: {}, ult: null });
+const blank = () => ({ cards: {}, lec: {}, dias: {}, exam: {}, fallos: {}, ocultos: {}, ult: null });
 const LK = (c, n) => c + "/" + n;
 const course = id => CAT.cursos.find(c => c.id === id);
-const lessonsOf = c => (IDX[c.id] || []).map(n => c.videos.find(v => v.n === n) || { n, t: "Lección " + n }).sort((a, b) => a.n - b.n);
-const studyCourses = () => CAT.cursos.filter(c => IDX[c.id] && IDX[c.id].length);
+// Hidden by default: introductory courses and filler lessons Kevin does not need. He can show them again
+// (or hide others) from the course screens; his choice is saved in P.ocultos and wins over this list.
+const DEF_OCULTOS = {
+  "intro": 1,                                              // Introducción a la Automatización y PLC
+  "tia1/1": 1, "tia1/2": 1, "tia1/3": 1, "tia1/4": 1,      // por qué Siemens, historia, qué es un PLC, procesadores
+  "x5/1": 1, "x5/2": 1, "x5/3": 1, "x5/4": 1,              // introducción, clase en vivo, herramientas mínimas, ley de Ohm
+  "ssnube/1": 1, "ssnube/2": 1,                            // qué es supervisión, qué es un HMI
+  "mcpi/2": 1, "mcpi/5": 1, "mcpi/7": 1,                   // "parte 2" de un minuto
+  "eplan/26": 1,                                           // herramienta zoom
+};
+const hidden = k => P && P.ocultos && P.ocultos[k] ? !!P.ocultos[k].h : !!DEF_OCULTOS[k];
+const setHidden = (k, h) => { P.ocultos[k] = { h, u: Date.now() }; save(); };
+const allLessonsOf = c => (IDX[c.id] || []).map(n => c.videos.find(v => v.n === n) || { n, t: "Lección " + n }).sort((a, b) => a.n - b.n);
+const lessonsOf = c => allLessonsOf(c).filter(v => !hidden(c.id + "/" + v.n));
+const hasLessons = c => IDX[c.id] && IDX[c.id].length;
+const studyCourses = () => CAT.cursos.filter(c => hasLessons(c) && !hidden(c.id) && lessonsOf(c).length);
+const hiddenCourses = () => CAT.cursos.filter(c => hasLessons(c) && hidden(c.id));
 const nbKey = v => v.p || v.id;
 
 function toast(msg, ms) {
@@ -51,7 +66,7 @@ function sync(msg) { $("sync").textContent = msg || ""; }
 // ---------- Progress: merge and save ----------
 function merge(a, b) {
   const out = blank();
-  for (const k of ["cards", "lec", "exam", "fallos"]) {
+  for (const k of ["cards", "lec", "exam", "fallos", "ocultos"]) {
     const x = a[k] || {}, y = b[k] || {};
     for (const id of new Set(Object.keys(x).concat(Object.keys(y)))) {
       out[k][id] = !y[id] || (x[id] && (x[id].u || 0) >= (y[id].u || 0)) ? x[id] : y[id];
@@ -126,7 +141,7 @@ function grade(key, g, card) {
   c.f = card.f; c.b = card.b; c.l = card.l;
   P.cards[key] = c; act(1);
 }
-const dueCards = () => Object.keys(P.cards).filter(k => P.cards[k].d <= today()).map(k => Object.assign({ key: k }, P.cards[k]));
+const dueCards = () => Object.keys(P.cards).filter(k => P.cards[k].d <= today() && !hidden(P.cards[k].l || "") && !hidden((P.cards[k].l || "").split("/")[0])).map(k => Object.assign({ key: k }, P.cards[k]));
 function badge() { const n = dueCards().length; const b = $("due-badge"); b.hidden = !n; b.textContent = n > 99 ? "99+" : n; }
 
 // ---------- Mastery ----------
@@ -247,33 +262,60 @@ function viewHoy() {
 
 function viewCursos() {
   const cs = studyCourses();
-  let h = `<h1 style="margin:8px 0 4px">Cursos</h1><p class="muted small" style="margin:0 0 14px">Solo los que tienen transcripciones (${cs.reduce((a, c) => a + IDX[c.id].length, 0)} lecciones).</p>`;
+  let h = `<h1 style="margin:8px 0 4px">Cursos</h1><p class="muted small" style="margin:0 0 14px">${cs.reduce((a, c) => a + lessonsOf(c).length, 0)} lecciones para estudiar. Oculta lo que no te sirva desde cada curso.</p>`;
   if (!cs.length) h += `<div class="empty">No hay transcripciones en <b>Mi unidad/Estudio/Repasa/transcripciones</b>.<br>Súbelas con <code>subir_transcripciones.py</code>.</div>`;
   for (const c of cs) {
     const m = courseMastery(c), ex = P.exam[c.id];
     h += `<a class="item" href="#/curso/${encodeURIComponent(c.id)}">${ring(m)}<div class="grow"><div class="t">${esc(c.title)}</div>
-      <div class="s">${IDX[c.id].length} lecciones${ex && ex.f ? " · examen " + fmtDate(ex.f) : ""}</div></div>${ICON.chev}</a>`;
+      <div class="s">${lessonsOf(c).length} lecciones${ex && ex.f ? " · examen " + fmtDate(ex.f) : ""}</div></div>${ICON.chev}</a>`;
   }
+  const hc = hiddenCourses();
+  if (hc.length) h += `<div class="section"><h2>Ocultos</h2>${hc.map(c => `<div class="item"><div class="grow"><div class="t muted">${esc(c.title)}</div><div class="s">${IDX[c.id].length} lecciones</div></div>
+    <button class="btn ghost" data-show="${esc(c.id)}">Mostrar</button></div>`).join("")}</div>`;
   V().innerHTML = h;
+  V().querySelectorAll("[data-show]").forEach(b => b.onclick = () => { setHidden(b.dataset.show, false); toast("Curso visible otra vez"); viewCursos(); });
+}
+
+// Pick which lessons of a course appear in the app.
+function viewElegir(c) {
+  const all = allLessonsOf(c);
+  V().innerHTML = `<button class="back" onclick="viewCurso('${esc(c.id)}')">${ICON.back} ${esc(c.title)}</button>
+    <h2>Elegir lecciones</h2><p class="muted small">Desmarca las que no te sirven. Desaparecen del plan, del repaso y del dominio. Puedes volver a marcarlas cuando quieras.</p>
+    <div class="row" style="gap:8px;margin:10px 0"><button class="btn grow" id="eall">Marcar todas</button><button class="btn grow" id="enone">Desmarcar todas</button></div>
+    <div id="elist">${all.map(v => `<label class="item" style="cursor:pointer"><input type="checkbox" data-n="${v.n}" ${hidden(c.id + "/" + v.n) ? "" : "checked"} style="width:22px;height:22px;accent-color:var(--ac)">
+      <div class="grow"><div class="t">${esc(v.t)}</div><div class="s">Lección ${v.n}${v.s ? " · " + esc(v.s) : ""}</div></div></label>`).join("")}</div>
+    <div class="section"><button class="btn primary block" id="esave">Guardar</button>
+    <button class="btn ghost block" id="ehide" style="margin-top:8px">Ocultar el curso completo</button></div>`;
+  const boxes = () => V().querySelectorAll("#elist input");
+  $("eall").onclick = () => boxes().forEach(b => { b.checked = true; });
+  $("enone").onclick = () => boxes().forEach(b => { b.checked = false; });
+  $("esave").onclick = () => {
+    boxes().forEach(b => { const k = c.id + "/" + b.dataset.n; if (hidden(k) === b.checked) setHidden(k, !b.checked); });
+    toast("Lista guardada"); viewCurso(c.id);
+  };
+  $("ehide").onclick = () => { setHidden(c.id, true); toast("Curso oculto. Lo recuperas al final de Cursos."); go("#/cursos"); };
 }
 
 function viewCurso(id) {
   const c = course(id); if (!c) return go("#/cursos");
   const p = plan(c), ex = P.exam[c.id] || {}, m = courseMastery(c);
   let h = `<button class="back" onclick="go('#/cursos')">${ICON.back} Cursos</button>
-    <div class="row">${ring(m)}<div class="grow"><h2>${esc(c.title)}</h2><p class="muted small" style="margin:2px 0 0">${esc(c.cat || "")} · ${IDX[c.id].length} lecciones</p></div></div>
+    <div class="row">${ring(m)}<div class="grow"><h2>${esc(c.title)}</h2><p class="muted small" style="margin:2px 0 0">${esc(c.cat || "")} · ${lessonsOf(c).length} de ${IDX[c.id].length} lecciones</p></div></div>
+    ${hidden(c.id) ? `<div class="card section row"><div class="grow small">Este curso está oculto.</div><button class="btn primary" id="cshow">Mostrar</button></div>` : ""}
     <div class="card section"><h3>${p ? "Examen el " + fmtDate(ex.f) : "Plan de examen"}</h3>
     ${p ? `<p class="muted small">Meta ${ex.meta}% · faltan ${p.left} día${p.left > 1 ? "s" : ""} · ${p.todo.length} lecciones por subir · <b style="color:var(--ac2)">${p.per} por día</b></p>` : `<p class="muted small">Pon la fecha y la meta. Repasa reparte las lecciones que te faltan entre los días que quedan.</p>`}
     <div class="row" style="gap:8px"><input class="in" type="date" id="exf" value="${esc(ex.f || "")}" min="${today()}" style="flex:1.4">
     <select class="in" id="exm" style="flex:1">${[60, 70, 80, 90, 100].map(x => `<option value="${x}"${(ex.meta || 80) === x ? " selected" : ""}>Meta ${x}%</option>`).join("")}</select></div>
     <div class="row" style="margin-top:10px"><button class="btn primary grow" id="exsave">${p ? "Actualizar" : "Crear plan"}</button>${p ? `<button class="btn ghost" id="exdel">Quitar</button>` : ""}</div></div>
-    <div class="section"><h2>Lecciones</h2>${lessonsOf(c).map(v => lessonRow(c, v, "Lección " + v.n + (v.s ? " · " + v.s : ""))).join("")}</div>`;
+    <div class="section"><div class="row between" style="margin-bottom:12px"><h2>Lecciones</h2><button class="btn ghost" id="cpick" style="min-height:36px">Elegir lecciones</button></div>${lessonsOf(c).map(v => lessonRow(c, v, "Lección " + v.n + (v.s ? " · " + v.s : ""))).join("")}</div>`;
   V().innerHTML = h;
   $("exsave").onclick = () => {
     const f = $("exf").value; if (!f) return toast("Elige la fecha del examen.");
     P.exam[c.id] = { f, meta: +$("exm").value, u: Date.now() }; save(); toast("Plan listo"); viewCurso(id);
   };
   if ($("exdel")) $("exdel").onclick = () => { P.exam[c.id] = { u: Date.now() }; save(); viewCurso(id); };
+  $("cpick").onclick = () => viewElegir(c);
+  if ($("cshow")) $("cshow").onclick = () => { setHidden(c.id, false); viewCurso(id); };
 }
 
 async function viewLeccion(cid, n, modo) {
@@ -623,7 +665,7 @@ function viewAjustes() {
     <button class="btn block" id="osave" style="margin-top:10px">Guardar profe</button></div>
     <div class="card section"><h3>Tus datos</h3><p class="muted small">Todo se guarda en tu Drive: <b>Mi unidad/Estudio/Repasa</b>. Los títulos de los cursos salen de Netflix PLC.${email ? "<br>Cuenta: " + esc(email) : ""}</p>
     <button class="btn block" id="fsync">Sincronizar ahora</button></div>
-    <p class="muted small" style="text-align:center">Repasa · versión 5</p>`;
+    <p class="muted small" style="text-align:center">Repasa · versión 6</p>`;
   $("gsave").onclick = async () => {
     const k = $("gk").value.trim(); if (!k) return toast("Pega tu clave primero.");
     $("gsave").disabled = true; $("gsave").textContent = "Probando…";
