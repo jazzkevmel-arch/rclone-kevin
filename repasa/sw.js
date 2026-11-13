@@ -1,6 +1,6 @@
 // Repasa service worker: keeps the app shell for offline start. Data (Drive, Gemini) always goes to the network.
-const CACHE = "repasa-v4";
-const SHELL = ["./", "index.html", "estilos.css?v=4", "drive.js?v=4", "datos.js?v=4", "ia.js?v=4", "voz.js?v=4", "app.js?v=4", "icono.svg", "manifest.json"];
+const CACHE = "repasa-v5";
+const SHELL = ["./", "index.html", "estilos.css?v=5", "drive.js?v=5", "datos.js?v=5", "ia.js?v=5", "voz.js?v=5", "app.js?v=5", "icono.svg", "manifest.json"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener("activate", e => {
   e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim()));

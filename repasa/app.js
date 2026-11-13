@@ -609,10 +609,12 @@ function viewAjustes() {
   let email = ""; try { email = localStorage.getItem("gmail") || ""; } catch (_) { /* storage blocked */ }
   V().innerHTML = `<h1 style="margin:8px 0 14px">Ajustes</h1>
     <div class="card"><h3>Inteligencia artificial (Gemini)</h3>
-    <p class="muted small">${IA.key ? "Conectada · modelo <b>" + esc(IA.model) + "</b>" : "Sin conectar. Es gratis con límite diario."}</p>
+    <p class="muted small">${IA.key ? "✔ Conectada · tu clave ya está guardada en tu Drive. Modelo <b>" + esc(IA.model) + "</b>" : "Sin conectar. Es gratis con límite diario."}</p>
+    <div id="gform"${IA.key ? " hidden" : ""}>
     <ol class="steps"><li>Abre <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener" style="color:var(--ac2)">aistudio.google.com/apikey</a> con tu cuenta de Google.</li><li>Toca <b>Create API key</b> y cópiala.</li><li>Pégala aquí y guarda. Se guarda solo en tu Drive.</li></ol>
     <label class="f" for="gk">Clave de Gemini</label><input class="in" id="gk" type="password" autocomplete="off" placeholder="${IA.key ? "•••••••• (guardada)" : "AIza…"}">
     <div class="row" style="margin-top:10px"><button class="btn primary grow" id="gsave">Guardar y probar</button>${IA.key ? `<button class="btn ghost" id="gdel">Quitar</button>` : ""}</div></div>
+    ${IA.key ? `<button class="btn block" id="gchange">Cambiar clave</button>` : ""}</div>
     <div class="card section"><h3>Profe Floro (examen oral)</h3>
     <p class="muted small">Cuánto te roche, con qué voz y cuántas preguntas te hace.${CFG.live ? " Modelo de voz: <b>" + esc(CFG.live) + "</b>" : ""}</p>
     <label class="f" for="onv">Nivel de roche</label><select class="in" id="onv">${Object.keys(NIVELES).map(k => `<option value="${k}"${ORAL().nivel === k ? " selected" : ""}>${NIVELES[k]}${k === "sinfiltro" ? " (con lisuras)" : ""}</option>`).join("")}</select>
@@ -621,7 +623,7 @@ function viewAjustes() {
     <button class="btn block" id="osave" style="margin-top:10px">Guardar profe</button></div>
     <div class="card section"><h3>Tus datos</h3><p class="muted small">Todo se guarda en tu Drive: <b>Mi unidad/Estudio/Repasa</b>. Los títulos de los cursos salen de Netflix PLC.${email ? "<br>Cuenta: " + esc(email) : ""}</p>
     <button class="btn block" id="fsync">Sincronizar ahora</button></div>
-    <p class="muted small" style="text-align:center">Repasa · versión 4</p>`;
+    <p class="muted small" style="text-align:center">Repasa · versión 5</p>`;
   $("gsave").onclick = async () => {
     const k = $("gk").value.trim(); if (!k) return toast("Pega tu clave primero.");
     $("gsave").disabled = true; $("gsave").textContent = "Probando…";
@@ -637,6 +639,7 @@ function viewAjustes() {
     try { await Store.saveConfig(CFG); toast(note, 4500); } catch (e) { toast("Funciona, pero no se guardó en Drive: " + e.message, 4500); }
     viewAjustes();
   };
+  if ($("gchange")) $("gchange").onclick = () => { $("gform").hidden = false; $("gchange").hidden = true; $("gk").focus(); };
   if ($("gdel")) $("gdel").onclick = async () => { CFG.gemini = ""; IA.key = ""; await Store.saveConfig(CFG); viewAjustes(); };
   $("fsync").onclick = async () => { dirty = true; await flush(); toast("Sincronizado"); };
   $("osave").onclick = async () => {
